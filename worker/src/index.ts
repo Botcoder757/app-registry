@@ -327,6 +327,7 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
   const now = Date.now()
   let synced = 0
 
+  try {
   for (const app of body.apps) {
     const latestVersion = app.versions[app.versions.length - 1]
     if (!latestVersion) continue
@@ -420,6 +421,12 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
         c.sort_order ?? 0, now
       ).run()
     }
+  }
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('Sync D1 error:', msg, err)
+    return error(`Sync failed: ${msg}`, 500)
   }
 
   return json({ ok: true, synced })
@@ -521,8 +528,9 @@ export default {
 
       return error('Not found', 404)
     } catch (err) {
-      console.error('Worker error:', err)
-      return error('Internal server error', 500)
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('Worker error:', msg, err)
+      return error(`Internal server error: ${msg}`, 500)
     }
   },
 }
