@@ -308,11 +308,18 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
     return error('Unauthorized', 401)
   }
 
-  const body = await request.json() as {
+  let body: {
     apps: SyncAppPayload[]
     collections?: Array<{ id: string; name: string; description?: string; apps: string[] }>
     curated?: Array<{ slug: string; name: string; description: string; category: string; source: string; icon_url?: string; sort_order?: number }>
   }
+  try {
+    body = await request.json()
+  } catch (err) {
+    console.error('Failed to parse sync body:', err)
+    return error('Invalid JSON body', 400)
+  }
+
   if (!body.apps || !Array.isArray(body.apps)) {
     return error('Missing apps array')
   }
@@ -447,24 +454,24 @@ export default {
     try {
       // HTML pages — registry.construct.computer
       if (request.method === 'GET') {
-        if (path === '/')               return browsePage(url, env)
+        if (path === '/')               return await browsePage(url, env)
         if (path === '/publish')        return publishPage()
 
         // /apps/:id (HTML detail page — no /v1/ prefix)
         const htmlAppMatch = path.match(/^\/apps\/([a-z0-9-]+)$/)
-        if (htmlAppMatch)               return appDetailPage(htmlAppMatch[1], env)
+        if (htmlAppMatch)               return await appDetailPage(htmlAppMatch[1], env)
       }
 
       // Public API endpoints
       if (request.method === 'GET') {
-        if (path === '/v1/apps')        return listApps(url, env)
-        if (path === '/v1/curated')     return getCurated(env)
-        if (path === '/v1/categories')  return getCategories(env)
-        if (path === '/v1/featured')    return getFeatured(env)
+        if (path === '/v1/apps')        return await listApps(url, env)
+        if (path === '/v1/curated')     return await getCurated(env)
+        if (path === '/v1/categories')  return await getCategories(env)
+        if (path === '/v1/featured')    return await getFeatured(env)
 
         // /v1/apps/:id
         const appMatch = path.match(/^\/v1\/apps\/([a-z0-9-]+)$/)
-        if (appMatch) return getApp(appMatch[1], env)
+        if (appMatch) return await getApp(appMatch[1], env)
 
         // /v1/apps/:id/download — return repo tarball URL for a version
         const dlMatch = path.match(/^\/v1\/apps\/([a-z0-9-]+)\/download(?:\/(.+))?$/)
@@ -498,13 +505,13 @@ export default {
 
       // Authenticated sync endpoint
       if (request.method === 'POST' && path === '/v1/sync') {
-        return syncApps(request, env)
+        return await syncApps(request, env)
       }
 
       // Install count bump (fire-and-forget from backend)
       if (request.method === 'POST') {
         const bumpMatch = path.match(/^\/v1\/apps\/([a-z0-9-]+)\/installed$/)
-        if (bumpMatch) return incrementInstall(bumpMatch[1], env)
+        if (bumpMatch) return await incrementInstall(bumpMatch[1], env)
       }
 
       // Health check
