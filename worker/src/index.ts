@@ -4,7 +4,12 @@
  * Read replica of the GitHub registry repo (construct-computer/app-registry).
  * Provides a fast, globally-distributed API for browsing and searching apps.
  *
- * Public endpoints (no auth, cached):
+ * HTML pages (registry.construct.computer):
+ *   GET  /                     — Browse/search apps
+ *   GET  /apps/:id             — App detail page
+ *   GET  /publish              — How to publish an app
+ *
+ * Public API (no auth, cached):
  *   GET  /v1/apps              — List/search apps
  *   GET  /v1/apps/:id          — App detail + versions
  *   GET  /v1/categories        — Categories with counts
@@ -13,6 +18,8 @@
  * Authenticated endpoints (sync from GitHub Actions):
  *   POST /v1/sync              — Upsert app data from registry repo
  */
+
+import { browsePage, appDetailPage, publishPage } from './pages'
 
 interface Env {
   DB: D1Database
@@ -390,7 +397,17 @@ export default {
     const path = url.pathname
 
     try {
-      // Public read endpoints
+      // HTML pages — registry.construct.computer
+      if (request.method === 'GET') {
+        if (path === '/')               return browsePage(url, env)
+        if (path === '/publish')        return publishPage()
+
+        // /apps/:id (HTML detail page — no /v1/ prefix)
+        const htmlAppMatch = path.match(/^\/apps\/([a-z0-9-]+)$/)
+        if (htmlAppMatch)               return appDetailPage(htmlAppMatch[1], env)
+      }
+
+      // Public API endpoints
       if (request.method === 'GET') {
         if (path === '/v1/apps')        return listApps(url, env)
         if (path === '/v1/categories')  return getCategories(env)
