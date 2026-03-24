@@ -1,0 +1,6 @@
+{
+  "id": "staff-picks",
+  "name": "Staff Picks",
+  "description": "Hand-picked apps by the Construct team",
+  "apps": ["hello-world", "mercadolibre"]
+}

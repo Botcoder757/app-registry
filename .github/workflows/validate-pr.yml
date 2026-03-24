@@ -1,0 +1,159 @@
+name: Validate App Submission
+
+on:
+  pull_request:
+    paths:
+      - 'apps/*.json'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Find changed app files
+        id: changed
+        run: |
+          files=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} -- 'apps/*.json' | tr '\n' ' ')
+          echo "files=$files" >> $GITHUB_OUTPUT
+
+      - name: Validate each app
+        run: |
+          set -e
+          ERRORS=""
+          SUMMARY=""
+
+          for file in ${{ steps.changed.outputs.files }}; do
+            app_id=$(basename "$file" .json)
+            echo "=== Validating: $app_id ==="
+
+            # Parse pointer file
+            repo=$(jq -r '.repo' "$file")
+            latest_version=$(jq -r '.versions[-1].version' "$file")
+            latest_commit=$(jq -r '.versions[-1].commit' "$file")
+
+            if [ "$repo" = "null" ] || [ "$latest_commit" = "null" ]; then
+              ERRORS="$ERRORS\n- $app_id: Missing repo or commit in pointer file"
+              continue
+            fi
+
+            # Clone at specific commit
+            tmpdir=$(mktemp -d)
+            echo "Cloning $repo at $latest_commit..."
+            git clone --depth=100 "$repo.git" "$tmpdir" 2>/dev/null || {
+              ERRORS="$ERRORS\n- $app_id: Failed to clone $repo"
+              continue
+            }
+            cd "$tmpdir"
+            git checkout "$latest_commit" 2>/dev/null || {
+              ERRORS="$ERRORS\n- $app_id: Commit $latest_commit not found"
+              cd -
+              continue
+            }
+
+            # Check manifest.json
+            if [ ! -f manifest.json ]; then
+              ERRORS="$ERRORS\n- $app_id: Missing manifest.json"
+              cd -; continue
+            fi
+
+            manifest_id=$(jq -r '.id' manifest.json)
+            manifest_name=$(jq -r '.name' manifest.json)
+            manifest_version=$(jq -r '.version' manifest.json)
+            manifest_entry=$(jq -r '.entry' manifest.json)
+            manifest_desc=$(jq -r '.description' manifest.json)
+
+            if [ "$manifest_id" = "null" ] || [ "$manifest_name" = "null" ] || [ "$manifest_entry" = "null" ]; then
+              ERRORS="$ERRORS\n- $app_id: manifest.json missing required fields (id, name, entry)"
+              cd -; continue
+            fi
+
+            if [ "$manifest_id" != "$app_id" ]; then
+              ERRORS="$ERRORS\n- $app_id: manifest.id ($manifest_id) does not match filename ($app_id)"
+              cd -; continue
+            fi
+
+            if [ "$manifest_version" != "$latest_version" ]; then
+              ERRORS="$ERRORS\n- $app_id: manifest.version ($manifest_version) does not match pointer version ($latest_version)"
+              cd -; continue
+            fi
+
+            # Check entry point exists
+            if [ ! -f "$manifest_entry" ]; then
+              ERRORS="$ERRORS\n- $app_id: Entry point $manifest_entry not found"
+              cd -; continue
+            fi
+
+            # Check icon exists
+            has_icon="false"
+            for ext in png svg jpg; do
+              if [ -f "icon.$ext" ]; then has_icon="true"; break; fi
+            done
+            if [ "$has_icon" = "false" ]; then
+              ERRORS="$ERRORS\n- $app_id: No icon file found (icon.png, icon.svg, or icon.jpg)"
+              cd -; continue
+            fi
+
+            # Check README
+            if [ ! -f README.md ]; then
+              ERRORS="$ERRORS\n- $app_id: Missing README.md"
+              cd -; continue
+            fi
+
+            # Deno type check
+            deno check "$manifest_entry" 2>/dev/null || {
+              ERRORS="$ERRORS\n- $app_id: deno check failed on $manifest_entry"
+              cd -; continue
+            }
+
+            # Count screenshots
+            screenshot_count=0
+            if [ -d screenshots ]; then
+              screenshot_count=$(ls screenshots/*.png 2>/dev/null | wc -l | tr -d ' ')
+            fi
+
+            # Check permissions
+            permissions=$(jq -c '.permissions // {}' manifest.json)
+            has_ui=$(jq -r '.ui // empty' manifest.json)
+            tools=$(jq -c '[.tools[]? | {name, description}]' manifest.json)
+            categories=$(jq -r '.categories[0] // "utilities"' manifest.json)
+
+            SUMMARY="$SUMMARY\n### $manifest_name ($app_id) v$manifest_version"
+            SUMMARY="$SUMMARY\n- **Description**: $manifest_desc"
+            SUMMARY="$SUMMARY\n- **Author**: $(jq -r '.author.name // "Unknown"' manifest.json)"
+            SUMMARY="$SUMMARY\n- **Category**: $categories"
+            SUMMARY="$SUMMARY\n- **Tools**: $(echo "$tools" | jq -r '.[].name' | tr '\n' ', ' | sed 's/,$//')"
+            SUMMARY="$SUMMARY\n- **Has UI**: $([ -n "$has_ui" ] && echo 'Yes' || echo 'No')"
+            SUMMARY="$SUMMARY\n- **Screenshots**: $screenshot_count"
+            SUMMARY="$SUMMARY\n- **Permissions**: $permissions"
+            SUMMARY="$SUMMARY\n- ✅ All checks passed"
+
+            cd -
+            rm -rf "$tmpdir"
+          done
+
+          if [ -n "$ERRORS" ]; then
+            echo "## ❌ Validation Errors"
+            echo -e "$ERRORS"
+            echo ""
+            echo "---"
+            echo -e "$SUMMARY"
+            exit 1
+          fi
+
+          echo "## ✅ Validation Passed"
+          echo -e "$SUMMARY"
+
+      - name: Post PR comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            // The validation step output is in the logs; for a production setup
+            // you'd capture it to a file and post as a comment.
+            console.log('Validation complete — check step logs for details.');

@@ -1,0 +1,147 @@
+name: Sync Registry to D1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/*.json'
+      - 'collections/*.json'
+      - 'categories.json'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Build sync payload and push to D1
+        env:
+          REGISTRY_SYNC_URL: ${{ secrets.REGISTRY_SYNC_URL }}
+          REGISTRY_SYNC_SECRET: ${{ secrets.REGISTRY_SYNC_SECRET }}
+        run: |
+          set -e
+
+          # Build the payload by reading each app pointer, cloning the repo,
+          # and extracting metadata from the manifest at the pinned commit.
+
+          payload='{"apps":[], "collections":[]}'
+
+          for file in apps/*.json; do
+            app_id=$(basename "$file" .json)
+            echo "Processing: $app_id"
+
+            repo=$(jq -r '.repo' "$file")
+            versions=$(jq -c '.versions' "$file")
+
+            # Get the latest version's commit
+            latest_commit=$(echo "$versions" | jq -r '.[-1].commit')
+
+            # Clone at that commit
+            tmpdir=$(mktemp -d)
+            git clone --depth=100 "$repo.git" "$tmpdir" 2>/dev/null
+            cd "$tmpdir"
+            git checkout "$latest_commit" 2>/dev/null
+
+            # Extract metadata from manifest
+            manifest=$(cat manifest.json)
+            name=$(echo "$manifest" | jq -r '.name')
+            description=$(echo "$manifest" | jq -r '.description')
+            author_name=$(echo "$manifest" | jq -r '.author.name // "Unknown"')
+            author_url=$(echo "$manifest" | jq -r '.author.url // empty')
+            category=$(echo "$manifest" | jq -r '.categories[0] // "utilities"')
+            tags=$(echo "$manifest" | jq -r '[.tags[]? // empty] | join(",")' )
+            has_ui=$(echo "$manifest" | jq -r 'if .ui then true else false end')
+            tools=$(echo "$manifest" | jq -c '[.tools[]? | {name, description}]')
+            permissions=$(echo "$manifest" | jq -c '.permissions // {}')
+
+            # Detect icon path
+            icon_path="icon.png"
+            [ -f icon.svg ] && icon_path="icon.svg"
+            [ -f icon.jpg ] && icon_path="icon.jpg"
+
+            # Count screenshots
+            screenshot_count=0
+            if [ -d screenshots ]; then
+              screenshot_count=$(ls screenshots/*.png 2>/dev/null | wc -l | tr -d ' ')
+            fi
+
+            # Extract first paragraph of README as long description
+            long_desc=""
+            if [ -f README.md ]; then
+              long_desc=$(awk '/^[^#\[]/ {p=1} p && /^$/ {exit} p' README.md | head -20)
+            fi
+
+            # Parse repo owner/name from URL
+            repo_owner=$(echo "$repo" | sed -E 's|https://github.com/([^/]+)/.*|\1|')
+            repo_name=$(echo "$repo" | sed -E 's|https://github.com/[^/]+/([^/]+).*|\1|')
+
+            # Build version array with manifests and changelogs
+            version_array="[]"
+            for row in $(echo "$versions" | jq -c '.[]'); do
+              ver=$(echo "$row" | jq -r '.version')
+              commit=$(echo "$row" | jq -r '.commit')
+              date=$(echo "$row" | jq -r '.date')
+
+              # For changelog, try to extract from CHANGELOG.md for this version
+              changelog=""
+              if [ -f CHANGELOG.md ]; then
+                changelog=$(awk "/## .*${ver}/,/^## /" CHANGELOG.md | tail -n +2 | head -10)
+              fi
+
+              version_array=$(echo "$version_array" | jq \
+                --arg v "$ver" --arg c "$commit" --arg d "$date" \
+                --arg cl "$changelog" --argjson m "$manifest" \
+                '. + [{"version":$v,"commit":$c,"date":$d,"changelog":$cl,"manifest":$m}]')
+            done
+
+            cd -
+            rm -rf "$tmpdir"
+
+            # Add to payload
+            app_obj=$(jq -n \
+              --arg id "$app_id" \
+              --arg name "$name" \
+              --arg desc "$description" \
+              --arg long_desc "$long_desc" \
+              --arg author_name "$author_name" \
+              --arg author_url "$author_url" \
+              --arg repo_owner "$repo_owner" \
+              --arg repo_name "$repo_name" \
+              --arg icon_path "$icon_path" \
+              --argjson screenshot_count "$screenshot_count" \
+              --arg category "$category" \
+              --arg tags "$tags" \
+              --argjson has_ui "$has_ui" \
+              --argjson tools "$tools" \
+              --argjson permissions "$permissions" \
+              --argjson versions "$version_array" \
+              '{id:$id, name:$name, description:$desc, long_description:$long_desc,
+                author_name:$author_name, author_url:$author_url,
+                repo_owner:$repo_owner, repo_name:$repo_name,
+                icon_path:$icon_path, screenshot_count:$screenshot_count,
+                category:$category, tags:$tags, has_ui:$has_ui,
+                tools:$tools, permissions:$permissions, versions:$versions}')
+
+            payload=$(echo "$payload" | jq --argjson app "$app_obj" '.apps += [$app]')
+          done
+
+          # Process collections
+          for file in collections/*.json; do
+            [ -f "$file" ] || continue
+            col=$(cat "$file")
+            payload=$(echo "$payload" | jq --argjson col "$col" '.collections += [$col]')
+          done
+
+          echo "Syncing $(echo "$payload" | jq '.apps | length') apps to registry..."
+
+          # Push to Worker
+          curl -sf -X POST "$REGISTRY_SYNC_URL/v1/sync" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $REGISTRY_SYNC_SECRET" \
+            -d "$payload"
+
+          echo "Sync complete."

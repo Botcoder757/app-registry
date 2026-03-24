@@ -1,0 +1,13 @@
+[
+  { "id": "productivity",     "name": "Productivity",      "icon": "layout-grid" },
+  { "id": "developer-tools",  "name": "Developer Tools",   "icon": "code" },
+  { "id": "communication",    "name": "Communication",     "icon": "message-circle" },
+  { "id": "finance",          "name": "Finance",           "icon": "dollar-sign" },
+  { "id": "media",            "name": "Media",             "icon": "image" },
+  { "id": "ai-tools",         "name": "AI Tools",          "icon": "sparkles" },
+  { "id": "data",             "name": "Data & Analytics",  "icon": "bar-chart-2" },
+  { "id": "utilities",        "name": "Utilities",         "icon": "wrench" },
+  { "id": "integrations",     "name": "Integrations",      "icon": "plug" },
+  { "id": "shopping",         "name": "Shopping",          "icon": "shopping-cart" },
+  { "id": "games",            "name": "Games",             "icon": "gamepad-2" }
+]
