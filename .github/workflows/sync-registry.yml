@@ -138,10 +138,14 @@ jobs:
 
           echo "Syncing $(echo "$payload" | jq '.apps | length') apps to registry..."
 
+          # Write payload to file to avoid shell escaping issues
+          echo "$payload" > /tmp/sync-payload.json
+
           # Push to Worker
-          curl -sf -X POST "$REGISTRY_SYNC_URL/v1/sync" \
+          curl --fail-with-body -X POST "$REGISTRY_SYNC_URL/v1/sync" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $REGISTRY_SYNC_SECRET" \
-            -d "$payload"
+            -d @/tmp/sync-payload.json
 
+          echo ""
           echo "Sync complete."
