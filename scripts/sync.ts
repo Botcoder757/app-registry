@@ -35,6 +35,25 @@ interface Manifest {
 const apps: unknown[] = [];
 const collections: unknown[] = [];
 
+// Load verified list — org-based auto-verify + manual app IDs
+let verifiedOrgs = new Set<string>();
+let verifiedAppIds = new Set<string>();
+try {
+  if (existsSync("verified.json")) {
+    const data = JSON.parse(await Deno.readTextFile("verified.json")) as {
+      orgs?: string[];
+      apps?: string[];
+    };
+    verifiedOrgs = new Set((data.orgs ?? []).map((o) => o.toLowerCase()));
+    verifiedAppIds = new Set((data.apps ?? []).map((a) => a.toLowerCase()));
+    console.log(
+      `Verified: ${verifiedOrgs.size} orgs, ${verifiedAppIds.size} apps`
+    );
+  }
+} catch (err) {
+  console.warn(`Warning: Failed to read verified.json: ${err}`);
+}
+
 // Process each app pointer
 for await (const entry of Deno.readDir("apps")) {
   if (!entry.name.endsWith(".json")) continue;
@@ -148,6 +167,9 @@ for await (const entry of Deno.readDir("apps")) {
     category: manifest.categories?.[0] ?? "utilities",
     tags: (manifest.tags ?? []).join(","),
     has_ui: !!manifest.ui,
+    verified:
+      verifiedOrgs.has(repoOwner.toLowerCase()) ||
+      verifiedAppIds.has(appId.toLowerCase()),
     tools: (manifest.tools ?? []).map((t) => ({
       name: t.name,
       description: t.description,

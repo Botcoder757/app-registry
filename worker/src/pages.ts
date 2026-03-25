@@ -85,6 +85,7 @@ interface AppData {
   avg_rating: number
   rating_count: number
   featured: boolean
+  verified: boolean
   has_ui: boolean
   icon_url: string
   repo_url: string
@@ -159,7 +160,7 @@ export async function browsePage(url: URL, env: { DB: D1Database }): Promise<Res
     tags: r.tags ? r.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
     latest_version: r.latest_version, install_count: r.install_count,
     avg_rating: r.avg_rating, rating_count: r.rating_count,
-    featured: r.featured === 1, has_ui: r.has_ui === 1,
+    featured: r.featured === 1, verified: r.verified === 1, has_ui: r.has_ui === 1,
     icon_url: `https://raw.githubusercontent.com/${r.repo_owner}/${r.repo_name}/${r.latest_commit}/${r.icon_path}`,
     repo_url: `https://github.com/${r.repo_owner}/${r.repo_name}`,
     tools: r.tools_json ? JSON.parse(r.tools_json) : [],
@@ -232,7 +233,7 @@ export async function appDetailPage(appId: string, env: { DB: D1Database }): Pro
     tags: r.tags ? r.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
     latest_version: r.latest_version, install_count: r.install_count,
     avg_rating: r.avg_rating, rating_count: r.rating_count,
-    featured: r.featured === 1, has_ui: r.has_ui === 1,
+    featured: r.featured === 1, verified: r.verified === 1, has_ui: r.has_ui === 1,
     icon_url: `${raw}/${r.icon_path}`,
     repo_url: `https://github.com/${r.repo_owner}/${r.repo_name}`,
     tools: r.tools_json ? JSON.parse(r.tools_json) : [],

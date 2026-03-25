@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS apps (
   avg_rating        REAL DEFAULT 0,
   rating_count      INTEGER DEFAULT 0,
   featured          INTEGER DEFAULT 0,
+  verified          INTEGER DEFAULT 0,
   status            TEXT DEFAULT 'active',
   has_ui            INTEGER DEFAULT 0,
   tools_json        TEXT,
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS apps (
 
 CREATE INDEX IF NOT EXISTS idx_apps_category ON apps(category);
 CREATE INDEX IF NOT EXISTS idx_apps_featured ON apps(featured) WHERE featured = 1;
+CREATE INDEX IF NOT EXISTS idx_apps_verified ON apps(verified) WHERE verified = 1;
 CREATE INDEX IF NOT EXISTS idx_apps_status ON apps(status);
 
 CREATE TABLE IF NOT EXISTS app_versions (

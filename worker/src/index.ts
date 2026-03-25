@@ -79,6 +79,7 @@ interface AppRow {
   avg_rating: number
   rating_count: number
   featured: number
+  verified: number
   status: string
   has_ui: number
   tools_json: string | null
@@ -100,6 +101,7 @@ function formatApp(app: AppRow, full = false) {
     avg_rating: app.avg_rating,
     rating_count: app.rating_count,
     featured: app.featured === 1,
+    verified: app.verified === 1,
     has_ui: app.has_ui === 1,
     icon_url: buildIconUrl(app.repo_owner, app.repo_name, app.latest_commit, app.icon_path),
     repo_url: buildRepoUrl(app.repo_owner, app.repo_name),
@@ -290,6 +292,7 @@ interface SyncAppPayload {
   category: string
   tags: string
   has_ui: boolean
+  verified?: boolean
   tools: Array<{ name: string; description: string }>
   permissions: Record<string, unknown>
   versions: Array<{
@@ -336,9 +339,9 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare(`
       INSERT INTO apps (id, name, description, long_description, author_name, author_url,
         repo_owner, repo_name, icon_path, screenshot_count, category, tags,
-        latest_version, latest_commit, has_ui, tools_json, permissions_json,
+        latest_version, latest_commit, has_ui, verified, tools_json, permissions_json,
         status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         description = excluded.description,
@@ -354,6 +357,7 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
         latest_version = excluded.latest_version,
         latest_commit = excluded.latest_commit,
         has_ui = excluded.has_ui,
+        verified = excluded.verified,
         tools_json = excluded.tools_json,
         permissions_json = excluded.permissions_json,
         updated_at = excluded.updated_at
@@ -364,7 +368,7 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
       app.icon_path, app.screenshot_count,
       app.category, app.tags,
       latestVersion.version, latestVersion.commit,
-      app.has_ui ? 1 : 0,
+      app.has_ui ? 1 : 0, app.verified ? 1 : 0,
       JSON.stringify(app.tools), JSON.stringify(app.permissions),
       now, now
     ).run()
