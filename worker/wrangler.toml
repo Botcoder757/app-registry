@@ -12,4 +12,4 @@ ENVIRONMENT = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "app-registry"
-database_id = "1473e4b2-7925-4f8d-b3c0-74f73aeeb449"
+database_id = "84e9b1bf-4621-4c45-aec7-cb1fa97ccc97"
