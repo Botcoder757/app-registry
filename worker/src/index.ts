@@ -104,7 +104,7 @@ function formatApp(app: AppRow, full = false) {
     featured: app.featured === 1,
     verified: app.verified === 1,
     has_ui: app.has_ui === 1,
-    base_url: app.base_url || `https://apps.construct.computer/${app.id}`,
+    base_url: `https://apps.construct.computer/${app.id}`,
     icon_url: buildIconUrl(app.repo_owner, app.repo_name, app.latest_commit, app.icon_path),
     repo_url: buildRepoUrl(app.repo_owner, app.repo_name),
     tools: app.tools_json ? JSON.parse(app.tools_json) : [],
