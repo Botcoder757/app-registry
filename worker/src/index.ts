@@ -600,6 +600,20 @@ export default {
         if (bumpMatch) return await incrementInstall(bumpMatch[1], env)
       }
 
+      // Update tool definitions (called by CI/CD after deploy)
+      if (request.method === 'POST') {
+        const toolsMatch = path.match(/^\/v1\/apps\/([a-z0-9-]+)\/tools$/)
+        if (toolsMatch) {
+          const auth = request.headers.get('Authorization')
+          if (auth !== `Bearer ${env.SYNC_SECRET}`) return error('Unauthorized', 401)
+          const appId = toolsMatch[1]
+          const tools = await request.json() as Array<{ name: string; description: string }>
+          await env.DB.prepare('UPDATE apps SET tools_json = ?, updated_at = ? WHERE id = ?')
+            .bind(JSON.stringify(tools), Date.now(), appId).run()
+          return json({ ok: true, app: appId, tools: tools.length })
+        }
+      }
+
       // Health check
       if (path === '/health') {
         return json({ status: 'ok', timestamp: new Date().toISOString() })
