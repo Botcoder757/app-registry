@@ -124,7 +124,8 @@ async function handleToolCall(name: string, args: Record<string, unknown>): Prom
 
       case 'hash': {
         const text = args.text as string;
-        const algorithm = (args.algorithm as string) || 'SHA-256';
+        const rawAlgo = (args.algorithm as string) || 'SHA-256';
+        const algorithm = rawAlgo.toUpperCase().replace(/^SHA(\d)/, 'SHA-$1');
         const data = new TextEncoder().encode(text);
         const hashBuffer = await crypto.subtle.digest(algorithm, data);
         const hex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
