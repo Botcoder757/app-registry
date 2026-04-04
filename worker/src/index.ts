@@ -104,7 +104,7 @@ function formatApp(app: AppRow, full = false) {
     featured: app.featured === 1,
     verified: app.verified === 1,
     has_ui: app.has_ui === 1,
-    base_url: app.base_url || `https://${app.id}.apps.construct.computer`,
+    base_url: app.base_url || `https://construct-app-${app.id}.construct-computer.workers.dev`,
     icon_url: buildIconUrl(app.repo_owner, app.repo_name, app.latest_commit, app.icon_path),
     repo_url: buildRepoUrl(app.repo_owner, app.repo_name),
     tools: app.tools_json ? JSON.parse(app.tools_json) : [],
@@ -371,7 +371,7 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
       app.icon_path, app.screenshot_count,
       app.category, app.tags,
       latestVersion.version, latestVersion.commit,
-      app.has_ui ? 1 : 0, `https://${app.id}.apps.construct.computer`,
+      app.has_ui ? 1 : 0, `https://construct-app-${app.id}.construct-computer.workers.dev`,
       app.verified ? 1 : 0,
       JSON.stringify(app.tools), JSON.stringify(app.permissions),
       now, now
