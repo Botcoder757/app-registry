@@ -20,14 +20,7 @@
  */
 
 import { browsePage, appDetailPage, publishPage } from './pages'
-import { handleMcp as devtoolsMcp } from './apps/devtools'
-import { handleMcp as mercadolibreMcp } from './apps/mercadolibre'
-
-/** Map of app ID → MCP handler. Apps are bundled into this worker. */
-const APP_HANDLERS: Record<string, (request: Request) => Promise<Response>> = {
-  devtools: devtoolsMcp,
-  mercadolibre: mercadolibreMcp,
-}
+import { APP_HANDLERS } from './apps/registry'
 
 interface Env {
   DB: D1Database

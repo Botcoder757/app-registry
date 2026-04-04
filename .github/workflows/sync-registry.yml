@@ -8,6 +8,7 @@ on:
       - 'collections/*.json'
       - 'categories.json'
       - 'curated.json'
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -19,8 +20,26 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Sync apps to D1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Sync app metadata to D1
         env:
           REGISTRY_SYNC_URL: ${{ secrets.REGISTRY_SYNC_URL }}
           REGISTRY_SYNC_SECRET: ${{ secrets.REGISTRY_SYNC_SECRET }}
         run: deno run --allow-read --allow-write --allow-net --allow-env --allow-run scripts/sync.ts
+
+      - name: Bundle app handlers into worker
+        run: bash scripts/bundle-apps.sh
+
+      - name: Install worker dependencies
+        working-directory: worker
+        run: npm ci
+
+      - name: Deploy worker with bundled apps
+        working-directory: worker
+        run: npx wrangler@latest deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

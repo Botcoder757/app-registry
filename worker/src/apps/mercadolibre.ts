@@ -1518,5 +1518,4 @@ export async function handleMcp(request: Request): Promise<Response> {
     { headers: { 'Content-Type': 'application/json' } },
   );
 }
-
-// Exported as handleMcp — called by the registry worker's app proxy.
+// Exported as handleMcp — called by the registry worker.
