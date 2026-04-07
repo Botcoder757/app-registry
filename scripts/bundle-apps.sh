@@ -61,23 +61,45 @@ for pointer_file in "$APPS_DIR"/*.json; do
     continue
   fi
 
-  # Copy and patch: make handleMcp exported, remove default export
+  # Copy and patch: produce an exported handler function
   cp "$server_file" "$OUTPUT_DIR/$app_id.ts"
 
-  # Patch the file: export handleMcp, remove default export
+  # Detect which pattern the app uses:
+  #   SDK pattern:  export default <app>       → wrap as (req) => app.fetch(req)
+  #   Legacy:       async function handleMcp   → export that function directly
   python3 -c "
 import re, sys
 with open('$OUTPUT_DIR/$app_id.ts', 'r') as f:
     content = f.read()
-# Make handleMcp exported
-content = content.replace('async function handleMcp', 'export async function handleMcp')
-# Remove export default { fetch... }; block
-content = re.sub(
-    r'\n*//[^\n]*Worker Entry Point[^\n]*\n+export default \{.*?\};?\s*$',
-    '\n// Exported as handleMcp — called by the registry worker.\n',
-    content,
-    flags=re.DOTALL
-)
+
+# Detect SDK pattern: 'export default app' or 'export default <identifier>'
+sdk_match = re.search(r'export\s+default\s+(\w+)\s*;?\s*$', content, re.MULTILINE)
+
+if sdk_match and 'handleMcp' not in content.split('export default')[0].split('function ')[-1][:20]:
+    # SDK pattern — the default export is a ConstructApp instance with .fetch()
+    var_name = sdk_match.group(1)
+    # Remove the default export line
+    content = content[:sdk_match.start()] + content[sdk_match.end():]
+    # Remove any 'export default { fetch...' block (CF Worker style)
+    content = re.sub(
+        r'\n*export\s+default\s+\{.*?\};?\s*$',
+        '',
+        content,
+        flags=re.DOTALL
+    )
+    # Add named export that wraps the app's fetch method
+    content += f'\nexport const handleMcp = (request: Request): Promise<Response> => {var_name}.fetch(request);\n'
+else:
+    # Legacy pattern — standalone handleMcp function
+    content = content.replace('async function handleMcp', 'export async function handleMcp')
+    # Remove export default { fetch... }; block
+    content = re.sub(
+        r'\n*//[^\n]*Worker Entry Point[^\n]*\n+export default \{.*?\};?\s*\$',
+        '\n// Exported as handleMcp — called by the registry worker.\n',
+        content,
+        flags=re.DOTALL
+    )
+
 with open('$OUTPUT_DIR/$app_id.ts', 'w') as f:
     f.write(content)
 "
