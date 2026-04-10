@@ -12,15 +12,39 @@ Developer repo                  This registry              Cloudflare Worker + D
 ┌──────────────────┐           ┌──────────────────┐       ┌───────────────────────┐
 │ manifest.json    │           │ apps/{id}.json   │──CI──▶│ D1 database           │
 │ server.ts        │◀─pointer──│ (repo + commits) │       │ (search, browse, API) │
-│ icon.png         │           └──────────────────┘       └───────────────────────┘
-│ ui/ ...          │
-└──────────────────┘
+│ icon.png         │           └──────────────────┘       ├───────────────────────┤
+│ ui/ ...          │                                        │ Bundled app handlers  │
+└──────────────────┘                                        │ (/{appId}/mcp)        │
+                                                            └───────────────────────┘
 ```
 
 - **registry.construct.computer** — browse and search apps (HTML + API)
 - **apps.construct.computer** — app runtime proxy (MCP endpoints, UI serving, SDK)
 - Every listing is a reviewable PR against this repo
-- Assets (icons, screenshots) are served from GitHub's CDN at the pinned commit
+- Assets (icons, screenshots, UI files) are served from GitHub's CDN at the pinned commit
+
+## Documentation
+
+**[DEVELOPER_DOCS.md](DEVELOPER_DOCS.md)** — Complete guide for building, testing, and publishing Construct apps, including:
+
+- Quick start with `create-construct-app`
+- Project structure and required files
+- manifest.json reference with all fields
+- Building MCP servers with the App SDK
+- Adding visual UIs with the Browser SDK
+- OAuth2 authentication
+- Testing locally and in Construct
+- Publishing and updating your app
+- Troubleshooting
+
+## Quick Links
+
+- [App Store](https://registry.construct.computer) — browse apps
+- [Publishing Guide](https://registry.construct.computer/publish) — step-by-step guide
+- [App SDK](https://www.npmjs.com/package/@construct-computer/app-sdk) — build apps with TypeScript
+- [Create a new app](https://www.npmjs.com/package/@construct-computer/create-construct-app) — scaffold in seconds
+- [DevTools Reference App](https://github.com/construct-computer/construct-app-hello-world) — complete example with UI
+- [Manifest Schema](https://registry.construct.computer/schemas/manifest.json) — JSON Schema for IDE validation
 
 ## App Repository Structure
 
@@ -29,75 +53,54 @@ Every Construct app repo must follow this layout:
 ```
 construct-app-{name}/
 ├── manifest.json              # REQUIRED — app metadata
-├── server.ts                  # REQUIRED — MCP server entry (Deno)
-├── icon.png                   # REQUIRED — 256x256 (or icon.svg)
+├── server.ts                  # REQUIRED — MCP server entry point
+│                              #   (or src/index.ts, or index.ts)
+├── icon.png                   # REQUIRED — 256×256 (or icon.svg, icon.jpg)
 ├── README.md                  # REQUIRED — shown as store description
 ├── screenshots/               # OPTIONAL
-│   ├── 1.png                  #   1280x800 recommended
-│   ├── 2.png
-│   └── 3.png
+│   ├── 1.png                  #   1280×800 recommended
+│   └── 2.png
 ├── CHANGELOG.md               # OPTIONAL
-└── ui/                        # OPTIONAL — app GUI
-    ├── index.html
-    └── ...
+└── ui/                        # OPTIONAL — visual interface
+    ├── index.html             #   UI entry point
+    └── construct.d.ts         #   SDK type declarations
 ```
-
-## Manifest Schema
-
-The manifest is validated against the JSON Schema at [`https://registry.construct.computer/schemas/manifest.json`](https://registry.construct.computer/schemas/manifest.json).
-
-### Required fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Unique kebab-case identifier |
-| `name` | string | Display name |
-| `version` | string | Semver version |
-| `description` | string | One-line description |
-| `author` | `{ name, url? }` | Author info |
-| `entry` | string | MCP server entry point |
-
-### Optional fields
-
-`runtime`, `transport`, `permissions`, `categories`, `tags`, `icon`, `ui`, `tools`
 
 ## Publishing an App
 
-1. **Create your app repo** following the [structure above](#app-repository-structure).
-2. **Fork this registry** and add `apps/{your-app-id}.json`:
+1. **Create your app** using the [Develop Guide](DEVELOPER_DOCS.md) or `npx @construct-computer/create-construct-app my-app`
+2. **Push to a public GitHub repo** (e.g., `construct-app-myapp`)
+3. **Fork this registry** and add `apps/{your-app-id}.json`:
+   ```json
+   {
+     "repo": "https://github.com/you/construct-app-myapp",
+     "description": "A short description for the registry",
+     "versions": [
+       { "version": "1.0.0", "commit": "full-40-char-sha", "date": "2026-04-10" }
+     ]
+   }
+   ```
+4. **Open a PR** — CI validates your manifest, entry point, icon, and README
+5. **Merge** — once reviewed and merged, the sync pipeline publishes your app
 
-```json
-{
-  "repo": "https://github.com/you/construct-app-myapp",
-  "versions": [
-    {
-      "version": "1.0.0",
-      "commit": "full-40-char-commit-sha",
-      "date": "2026-03-24"
-    }
-  ]
-}
-```
-
-3. **Open a PR** — CI validates your app manifest, icon, and entry point.
-4. **Merge** — once reviewed and merged, the sync pipeline pushes your app to the store.
+See [DEVELOPER_DOCS.md](DEVELOPER_DOCS.md) for the full guide.
 
 ## Updating an App
 
-1. Push the update to your app repo.
-2. Open a PR to this registry adding a new entry to your `versions` array:
+Push the update to your repo, then open a PR adding a new version entry:
 
 ```json
 {
   "repo": "https://github.com/you/construct-app-myapp",
+  "description": "A short description for the registry",
   "versions": [
-    { "version": "1.0.0", "commit": "abc123...", "date": "2026-03-15" },
-    { "version": "1.1.0", "commit": "def456...", "date": "2026-03-24" }
+    { "version": "1.0.0", "commit": "abc123...", "date": "2026-04-01" },
+    { "version": "1.1.0", "commit": "def456...", "date": "2026-04-10" }
   ]
 }
 ```
 
-The latest version (last in the array) becomes the version shown in the store.
+The latest version (last in the array) becomes the current version in the store.
 
 ## Categories
 
@@ -121,7 +124,7 @@ All endpoints are under `registry.construct.computer`. Responses are JSON with C
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/v1/apps` | List/search apps. Query params: `q`, `category`, `sort` (`popular`/`recent`/`rating`/`name`), `page`, `limit` |
+| GET | `/v1/apps` | List/search apps. Params: `q`, `category`, `sort` (`popular`/`recent`/`rating`/`name`), `page`, `limit` |
 | GET | `/v1/apps/:id` | App detail — metadata, versions, reviews |
 | GET | `/v1/apps/:id/download` | Redirect to repo tarball for latest version |
 | GET | `/v1/apps/:id/download/:version` | Redirect to repo tarball for a specific version |
@@ -129,13 +132,15 @@ All endpoints are under `registry.construct.computer`. Responses are JSON with C
 | GET | `/v1/featured` | Featured apps and collections |
 | GET | `/v1/curated` | Curated third-party integrations |
 
-## Links
+App runtime endpoints under `apps.construct.computer`:
 
-- [App Store](https://registry.construct.computer) — browse apps
-- [Publishing Guide](https://registry.construct.computer/publish) — step-by-step guide
-- [App SDK](https://www.npmjs.com/package/@construct-computer/app-sdk) — build apps
-- [Create a new app](https://www.npmjs.com/package/@construct-computer/create-construct-app) — scaffold in seconds
-- [Sample App](https://github.com/construct-computer/construct-app-sample) — reference implementation
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/{appId}/mcp` | MCP JSON-RPC endpoint |
+| GET | `/{appId}/ui/*` | Proxy UI files from GitHub |
+| GET | `/{appId}/icon` | Proxy app icon |
+| GET | `/sdk/construct.css` | Construct SDK CSS |
+| GET | `/sdk/construct.js` | Construct SDK JavaScript bridge |
 
 ## License
 

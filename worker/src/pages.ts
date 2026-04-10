@@ -366,127 +366,458 @@ export async function appDetailPage(appId: string, env: { DB: D1Database }): Pro
 export function publishPage(): Response {
   const content = `
     <div class="container publish-page">
-      <h1>Publish an App</h1>
-      <p class="subtitle">Share your app with every Construct user. The registry is fully open — every listing is a transparent, reviewable pull request on GitHub.</p>
+      <h1>Build &amp; Publish an App</h1>
+      <p class="subtitle">Create an app for Construct and share it with every user. Apps are just <strong>MCP servers</strong> — you write tools, the AI agent calls them. Optionally add a visual UI. The registry is fully open; every listing is a reviewable pull request. <a href="https://github.com/construct-computer/app-registry/blob/main/DEVELOPER_DOCS.md" target="_blank" rel="noopener">Full developer docs &rarr;</a></p>
 
-      <div class="steps">
-        <div class="step">
-          <div class="step-num">1</div>
-          <div class="step-body">
-            <h3>Build your app</h3>
-            <p>Create a Construct app following the standard structure. Your app runs on <strong>Deno</strong> and communicates via <strong>MCP</strong> (Model Context Protocol).</p>
-            <pre><code>my-app/
-├── manifest.json       # App metadata (required)
-├── server.ts           # MCP server entry (required)
-├── icon.png            # 256&times;256 icon (required)
-├── README.md           # Store description (required)
-├── screenshots/        # Store screenshots (optional)
-│   ├── 1.png
-│   └── 2.png
-└── ui/                 # GUI window (optional)
-    └── index.html</code></pre>
-          </div>
-        </div>
+      <div class="publish-nav" id="toc">
+        <a href="#quickstart" class="toc-link">Quick Start</a>
+        <a href="#structure" class="toc-link">Project Structure</a>
+        <a href="#manifest" class="toc-link">manifest.json</a>
+        <a href="#server" class="toc-link">MCP Server</a>
+        <a href="#sdk" class="toc-link">App SDK</a>
+        <a href="#ui" class="toc-link">Visual UI</a>
+        <a href="#browser-sdk" class="toc-link">Browser SDK</a>
+        <a href="#auth" class="toc-link">Authentication</a>
+        <a href="#testing" class="toc-link">Testing</a>
+        <a href="#publishing" class="toc-link">Publishing</a>
+        <a href="#updating" class="toc-link">Updates</a>
+        <a href="#categories" class="toc-link">Categories</a>
+        <a href="#troubleshooting" class="toc-link">Troubleshooting</a>
+      </div>
 
-        <div class="step">
-          <div class="step-num">2</div>
-          <div class="step-body">
-            <h3>Write your manifest</h3>
-            <p>Define your app's metadata, tools, and permissions in <code>manifest.json</code>:</p>
-            <pre><code>{
-  "id": "my-app",
+      <div class="section" id="quickstart">
+        <h2>Quick Start</h2>
+        <p>Scaffold a complete project in seconds:</p>
+        <pre><code>npx @construct-computer/create-construct-app my-app
+cd my-app
+npm install
+npm run dev</code></pre>
+        <p>Your app is running at <code>http://localhost:8787</code>. Test it:</p>
+        <pre><code># Health check
+curl http://localhost:8787/health
+
+# List tools
+curl -X POST http://localhost:8787/mcp \\
+  -H 'Content-Type: application/json' \\
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+
+# Call a tool
+curl -X POST http://localhost:8787/mcp \\
+  -H 'Content-Type: application/json' \\
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"hello","arguments":{"name":"World"}},"id":2}'</code></pre>
+        <p>Use <code>--with-ui</code> to include a visual interface, or <code>--no-ui</code> for a tools-only app.</p>
+      </div>
+
+      <div class="section" id="structure">
+        <h2>Project Structure</h2>
+        <p>Every Construct app follows this layout:</p>
+        <pre><code>my-app/
+├── manifest.json        # App metadata (required)
+├── server.ts            # MCP server &mdash; registers tools (required)
+├── icon.png             # 256&times;256 icon (required; .svg and .jpg also work)
+├── README.md            # Used as the store description (required)
+├── package.json         # Dependencies and scripts
+├── wrangler.toml        # Cloudflare Workers config for local dev
+├── .gitignore
+└── ui/                  # OPTIONAL &mdash; visual interface
+    ├── index.html       # UI entry point, loads the Construct SDK
+    └── construct.d.ts   # TypeScript types for construct.* globals</code></pre>
+        <p><strong>Tools-only apps</strong> (no UI) skip the <code>ui/</code> directory and the <code>ui</code> field in their manifest.</p>
+        <p><strong>Entry points:</strong> The registry looks for <code>server.ts</code>, <code>src/index.ts</code>, or <code>index.ts</code> (in that order).</p>
+      </div>
+
+      <div class="section" id="manifest">
+        <h2>manifest.json</h2>
+        <p>Defines your app's metadata for the store listing. Validated against the <a href="https://registry.construct.computer/schemas/manifest.json">JSON Schema</a>.</p>
+        <pre><code>{
+  "$schema": "https://registry.construct.computer/schemas/manifest.json",
   "name": "My App",
-  "version": "1.0.0",
-  "description": "A short one-line description",
+  "description": "A short one-line description of what your app does.",
   "author": { "name": "Your Name", "url": "https://github.com/you" },
-  "entry": "server.ts",
-  "runtime": "deno",
-  "transport": "stdio",
-  "permissions": {
-    "network": ["api.example.com"]
-  },
+  "icon": "icon.png",
   "categories": ["utilities"],
-  "tags": ["example"],
-  "tools": [
-    { "name": "my_tool", "description": "What it does" }
-  ]
+  "tags": ["example", "demo"],
+  "ui": {
+    "entry": "ui/index.html",
+    "width": 800,
+    "height": 600
+  }
 }</code></pre>
-          </div>
-        </div>
+        <h4>Required fields</h4>
+        <table class="field-table">
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>name</code></td><td>string</td><td>Display name (1&ndash;50 chars). Shown in the store and Launchpad.</td></tr>
+            <tr><td><code>description</code></td><td>string</td><td>Short description (1&ndash;200 chars). Shown in search results.</td></tr>
+          </tbody>
+        </table>
+        <h4>Optional fields</h4>
+        <table class="field-table">
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>$schema</code></td><td>string</td><td>JSON Schema URL &mdash; enables autocomplete in editors.</td></tr>
+            <tr><td><code>author</code></td><td>object</td><td><code>{ "name": string, "url?": string }</code></td></tr>
+            <tr><td><code>icon</code></td><td>string</td><td>Relative path to icon file. Default: <code>"icon.png"</code>.</td></tr>
+            <tr><td><code>categories</code></td><td>string[]</td><td>Category IDs. See <a href="#categories">Categories</a> below.</td></tr>
+            <tr><td><code>tags</code></td><td>string[]</td><td>Searchable tags. Max 10, each max 30 chars.</td></tr>
+            <tr><td><code>ui</code></td><td>object</td><td>UI config. Omit for tools-only apps.</td></tr>
+            <tr><td><code>ui.entry</code></td><td>string</td><td>Entry point. Default: <code>"ui/index.html"</code>.</td></tr>
+            <tr><td><code>ui.width</code></td><td>integer</td><td>Window width in pixels. Default: 800, range: 200&ndash;2000.</td></tr>
+            <tr><td><code>ui.height</code></td><td>integer</td><td>Window height in pixels. Default: 600, range: 200&ndash;2000.</td></tr>
+            <tr><td><code>auth</code></td><td>object</td><td>OAuth2 config. See <a href="#auth">Authentication</a>.</td></tr>
+            <tr><td><code>permissions</code></td><td>object</td><td>Permissions shown during install. <code>{ "network": ["api.example.com"] }</code></td></tr>
+            <tr><td><code>tools</code></td><td>array</td><td>Pre-declared tool list. Auto-discovered on deploy if omitted.</td></tr>
+          </tbody>
+        </table>
+      </div>
 
-        <div class="step">
-          <div class="step-num">3</div>
-          <div class="step-body">
-            <h3>Push to GitHub</h3>
-            <p>Create a public repo for your app. The naming convention is <code>construct-app-{name}</code>, but any name works.</p>
-            <pre><code>git init && git add -A
+      <div class="section" id="server">
+        <h2>MCP Server</h2>
+        <p>Your <code>server.ts</code> is a Cloudflare Worker that handles JSON-RPC 2.0 requests on <code>POST /mcp</code>. Three methods:</p>
+        <table class="field-table">
+          <thead><tr><th>Method</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>initialize</code></td><td>Handshake &mdash; returns protocol version and server info</td></tr>
+            <tr><td><code>tools/list</code></td><td>Returns all tool definitions</td></tr>
+            <tr><td><code>tools/call</code></td><td>Executes a tool and returns the result</td></tr>
+          </tbody>
+        </table>
+
+        <h4>Using the App SDK (recommended)</h4>
+        <p>The <a href="https://www.npmjs.com/package/@construct-computer/app-sdk"><code>@construct-computer/app-sdk</code></a> handles all the JSON-RPC boilerplate for you:</p>
+        <pre><code>import { ConstructApp } from '@construct-computer/app-sdk';
+
+const app = new ConstructApp({ name: 'my-app', version: '1.0.0' });
+
+app.tool('hello', {
+  description: 'Say hello to someone',
+  parameters: {
+    name: { type: 'string', description: 'Who to greet' },
+  },
+  handler: async (args) =&gt; {
+    return \`Hello, \${args.name}!\`;
+  },
+});
+
+export default app;</code></pre>
+        <p>For production, the SDK is inlined into your <code>server.ts</code> (the scaffolder does this automatically). You can also <code>npm install @construct-computer/app-sdk</code> for local development with TypeScript types.</p>
+
+        <h4>Writing from scratch</h4>
+        <p>If you prefer, handle the JSON-RPC protocol yourself. You must handle <code>initialize</code>, <code>tools/list</code>, and <code>tools/call</code>. Your handler must also respond to <code>GET /health</code> with <code>"ok"</code> and handle CORS preflight (<code>OPTIONS</code>). The <code>x-construct-user</code> and <code>x-construct-auth</code> headers may be present on any request.</p>
+
+        <h4>Handler return values</h4>
+        <p>Tool handlers can return:</p>
+        <ul>
+          <li><strong>A string</strong> &mdash; automatically wrapped in a text content block: <code>return "Hello!"</code></li>
+          <li><strong>A ToolResult</strong> &mdash; for errors or multiple blocks:
+<pre><code>return {
+  content: [{ type: 'text', text: 'Query is required' }],
+  isError: true
+}</code></pre></li>
+        </ul>
+      </div>
+
+      <div class="section" id="sdk">
+        <h2>App SDK Reference</h2>
+        <p>Install for local development: <code>npm install @construct-computer/app-sdk</code></p>
+        <table class="field-table">
+          <thead><tr><th>API</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>new ConstructApp({ name, version })</code></td><td>Create app instance</td></tr>
+            <tr><td><code>app.tool(name, definition)</code></td><td>Register a tool. Chainable.</td></tr>
+            <tr><td><code>export default app</code></td><td>Cloudflare Worker entry point</td></tr>
+            <tr><td><code>requireAuth(ctx)</code></td><td>Throw if not authenticated. Use in tool handlers.</td></tr>
+            <tr><td><code>ctx.userId</code></td><td>User ID from <code>x-construct-user</code> header</td></tr>
+            <tr><td><code>ctx.auth.access_token</code></td><td>OAuth token from <code>x-construct-auth</code> header</td></tr>
+            <tr><td><code>ctx.isAuthenticated</code></td><td>Whether valid auth credentials are present</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section" id="ui">
+        <h2>Adding a Visual UI</h2>
+        <p>If you want users to interact with your app directly (not just through the AI), add a <code>ui/</code> directory:</p>
+
+        <h4>1. Add the <code>ui</code> field to your manifest:</h4>
+        <pre><code>"ui": {
+  "entry": "ui/index.html",
+  "width": 800,
+  "height": 600
+}</code></pre>
+
+        <h4>2. Create <code>ui/index.html</code></h4>
+        <p>Include the Construct SDK to communicate with the platform:</p>
+        <pre><code>&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+&lt;head&gt;
+  &lt;meta charset="UTF-8"&gt;
+  &lt;title&gt;My App&lt;/title&gt;
+  &lt;link rel="stylesheet" href="/sdk/construct.css"&gt;
+  &lt;script src="/sdk/construct.js"&gt;&lt;/script&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;div class="app"&gt;
+    &lt;input id="name" type="text" placeholder="Enter name" /&gt;
+    &lt;button class="btn" onclick="runTool()"&gt;Greet&lt;/button&gt;
+    &lt;div id="output"&gt;&lt;/div&gt;
+  &lt;/div&gt;
+  &lt;script&gt;
+    construct.ready(() =&gt; {
+      construct.ui.setTitle('My App');
+    });
+    async function runTool() {
+      const result = await construct.tools.callText('hello', {
+        name: document.getElementById('name').value
+      });
+      document.getElementById('output').textContent = result;
+    }
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+        <h4>3. Local development</h4>
+        <p>Add a <code>[assets]</code> section to <code>wrangler.toml</code>:</p>
+        <pre><code>[assets]
+directory = "./ui"
+binding = "ASSETS"
+not_found_handling = "none"
+run_worker_first = ["/*"]</code></pre>
+        <p>Then serve static files through the ASSETS binding in your server. In production, UI files are served from GitHub's CDN automatically.</p>
+      </div>
+
+      <div class="section" id="browser-sdk">
+        <h2>Browser SDK</h2>
+        <p>The SDK is a <code>postMessage</code> bridge that lets your UI communicate with Construct. Add to your <code>ui/index.html</code>:</p>
+        <pre><code>&lt;link rel="stylesheet" href="/sdk/construct.css"&gt;
+&lt;script src="/sdk/construct.js"&gt;&lt;/script&gt;</code></pre>
+        <p><strong>Core methods</strong> (always available):</p>
+        <table class="field-table">
+          <thead><tr><th>API</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>construct.ready(cb)</code></td><td>Run code when the SDK bridge is ready. Always wrap init code in this.</td></tr>
+            <tr><td><code>construct.tools.call(name, args)</code></td><td>Call an MCP tool. Returns <code>{ content, isError }</code>.</td></tr>
+            <tr><td><code>construct.tools.callText(name, args)</code></td><td>Call a tool, get just the text result. Most common.</td></tr>
+            <tr><td><code>construct.ui.setTitle(title)</code></td><td>Update the window title bar.</td></tr>
+            <tr><td><code>construct.ui.getTheme()</code></td><td>Get <code>{ mode: 'light'|'dark', accent }</code>.</td></tr>
+            <tr><td><code>construct.ui.close()</code></td><td>Close this app window.</td></tr>
+          </tbody>
+        </table>
+        <p><strong>Extended methods</strong> (only available inside the Construct desktop):</p>
+        <table class="field-table">
+          <thead><tr><th>API</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>construct.state.get()</code></td><td>Read persistent app state (max 1MB).</td></tr>
+            <tr><td><code>construct.state.set(state)</code></td><td>Write state. Triggers <code>onUpdate</code> on all clients.</td></tr>
+            <tr><td><code>construct.state.onUpdate(cb)</code></td><td>Subscribe to state changes from the agent or other tabs.</td></tr>
+            <tr><td><code>construct.agent.notify(message)</code></td><td>Send a message to the AI agent.</td></tr>
+          </tbody>
+        </table>
+        <p>TypeScript declarations are available at <code>ui/construct.d.ts</code> (auto-generated by <code>create-construct-app</code>). The full API reference is in the <a href="https://github.com/construct-computer/app-registry/blob/main/DEVELOPER_DOCS.md" target="_blank" rel="noopener">developer docs</a>.</p>
+      </div>
+
+      <div class="section" id="auth">
+        <h2>Authentication (OAuth2)</h2>
+        <p>If your app connects to an external API that requires user login, use OAuth2:</p>
+
+        <h4>1. Declare auth in your manifest:</h4>
+        <pre><code>"auth": {
+  "oauth2": {
+    "authorization_url": "https://api.example.com/oauth/authorize",
+    "token_url": "https://api.example.com/oauth/token",
+    "scopes": ["read", "write"]
+  }
+}</code></pre>
+
+        <h4>2. Guard authenticated tools:</h4>
+        <pre><code>import { requireAuth } from '@construct-computer/app-sdk';
+
+app.tool('get_my_account', {
+  description: 'Get the authenticated user account',
+  handler: async (args, ctx) =&gt; {
+    requireAuth(ctx); // throws if not authenticated
+    const res = await fetch('https://api.example.com/me', {
+      headers: { Authorization: \`Bearer \${ctx.auth.access_token}\` },
+    });
+    return await res.text();
+  },
+});</code></pre>
+
+        <p>Mix public and authenticated tools in the same app. The platform injects auth credentials via the <code>x-construct-auth</code> header when the user has connected their account.</p>
+      </div>
+
+      <div class="section" id="testing">
+        <h2>Testing Locally</h2>
+        <pre><code># Start dev server
+npm run dev      # runs on http://localhost:8787
+
+# Health check
+curl http://localhost:8787/health
+
+# Test MCP endpoint
+curl -X POST http://localhost:8787/mcp \\
+  -H 'Content-Type: application/json' \\
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+
+# Test with auth headers
+curl -X POST http://localhost:8787/mcp \\
+  -H 'Content-Type: application/json' \\
+  -H 'x-construct-auth: {"access_token":"test-token","user_id":"user-123"}' \\
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"hello","arguments":{"name":"World"}},"id":2}'</code></pre>
+        <p><strong>Test in Construct:</strong> Open App Registry &rarr; Installed &rarr; Developer Tools. Enter your app name and <code>http://localhost:8787</code>.
+
+        <p><strong>Remote testing:</strong> Use <a href="https://developers.cloudflare.com/cloudflare-one/connections/app-network/create-tunnel/" target="_blank" rel="noopener">cloudflared tunnel</a> to expose your local server:</p>
+        <pre><code>cloudflared tunnel --url http://localhost:8787</code></pre>
+      </div>
+
+      <div class="section" id="publishing">
+        <h2>Publishing to the Registry</h2>
+
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <h3>Prepare your app</h3>
+              <p>Make sure your repo has all required files:</p>
+              <ul>
+                <li><code>manifest.json</code> &mdash; with <code>name</code> and <code>description</code></li>
+                <li><code>server.ts</code> (or <code>src/index.ts</code> or <code>index.ts</code>) &mdash; MCP server entry point</li>
+                <li><code>icon.png</code> &mdash; 256&times;256 icon (or <code>icon.svg</code>, <code>icon.jpg</code>)</li>
+                <li><code>README.md</code> &mdash; used as the store description</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <h3>Push to GitHub</h3>
+              <p>Create a public repo. The naming convention is <code>construct-app-{name}</code>:</p>
+              <pre><code>git init && git add -A
 git commit -m "Initial release"
 git remote add origin git@github.com:you/construct-app-myapp.git
 git push -u origin main</code></pre>
+            </div>
           </div>
-        </div>
 
-        <div class="step">
-          <div class="step-num">4</div>
-          <div class="step-body">
-            <h3>Submit to the registry</h3>
-            <p>Fork <a href="https://github.com/construct-computer/app-registry">construct-computer/app-registry</a> and add a pointer file for your app:</p>
-            <pre><code># apps/my-app.json
-{
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <h3>Get your commit SHA</h3>
+              <pre><code>git rev-parse HEAD
+# &rarr; abc123def456789abc123def456789abc123def4</code></pre>
+              <p>This pins your app to an exact, auditable version.</p>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <h3>Add a pointer file</h3>
+              <p>Fork <a href="https://github.com/construct-computer/app-registry" target="_blank" rel="noopener">construct-computer/app-registry</a> and add <code>apps/{your-app-id}.json</code>:</p>
+              <pre><code>{
   "repo": "https://github.com/you/construct-app-myapp",
+  "description": "A short description for the registry listing",
   "versions": [
     {
       "version": "1.0.0",
-      "commit": "abc123def456...",
-      "date": "2026-03-24"
+      "commit": "abc123def456789abc123def456789abc123def4",
+      "date": "2026-04-10"
     }
   ]
 }</code></pre>
-            <p>The <strong>commit</strong> field must be the full 40-character SHA of the commit you want to publish. This pins users to an exact, auditable version.</p>
+              <p>The app ID (filename without <code>.json</code>) must be <strong>kebab-case</strong>: lowercase letters, numbers, and hyphens only.</p>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <h3>Open a pull request</h3>
+              <p>CI automatically validates your submission:</p>
+              <ul>
+                <li>Clones your repo at the pinned commit</li>
+                <li>Validates <code>manifest.json</code> has required fields</li>
+                <li>Checks that your entry point compiles</li>
+                <li>Verifies <code>icon.png</code> and <code>README.md</code> exist</li>
+                <li>Flags dangerous permissions for review</li>
+              </ul>
+              <p>Once a maintainer approves and merges, your app goes live within minutes!</p>
+            </div>
           </div>
         </div>
+      </div>
 
-        <div class="step">
-          <div class="step-num">5</div>
-          <div class="step-body">
-            <h3>Open a pull request</h3>
-            <p>CI automatically validates your app:</p>
-            <ul>
-              <li>Clones your repo at the pinned commit</li>
-              <li>Validates <code>manifest.json</code> schema</li>
-              <li>Checks <code>server.ts</code> compiles with <code>deno check</code></li>
-              <li>Verifies icon and README exist</li>
-              <li>Flags dangerous permissions for review</li>
-            </ul>
-            <p>Once a maintainer approves and merges, your app appears in the Construct App Registry.</p>
-          </div>
-        </div>
-
-        <div class="step">
-          <div class="step-num">6</div>
-          <div class="step-body">
-            <h3>Publishing updates</h3>
-            <p>Push the update to your repo, then open a PR adding a new version entry:</p>
-            <pre><code>{
+      <div class="section" id="updating">
+        <h2>Updating Your App</h2>
+        <p>Push the update to your repo, then open a PR to the registry adding a new version:</p>
+        <pre><code>{
   "repo": "https://github.com/you/construct-app-myapp",
+  "description": "A short description for the registry listing",
   "versions": [
-    { "version": "1.0.0", "commit": "abc123...", "date": "2026-03-15" },
-    { "version": "1.1.0", "commit": "def456...", "date": "2026-03-24" }
+    { "version": "1.0.0", "commit": "abc123...", "date": "2026-04-01" },
+    { "version": "1.1.0", "commit": "def456...", "date": "2026-04-10" }
   ]
 }</code></pre>
-            <p>The last version in the array becomes the latest in the store.</p>
+        <p>The <strong>last entry</strong> in the <code>versions</code> array becomes the current version. Previous versions remain accessible in the version history.</p>
+      </div>
+
+      <div class="section" id="categories">
+        <h2>Categories</h2>
+        <div class="cat-grid">
+          <span class="cat-badge">productivity</span>
+          <span class="cat-badge">developer-tools</span>
+          <span class="cat-badge">communication</span>
+          <span class="cat-badge">finance</span>
+          <span class="cat-badge">media</span>
+          <span class="cat-badge">ai-tools</span>
+          <span class="cat-badge">data</span>
+          <span class="cat-badge">utilities</span>
+          <span class="cat-badge">integrations</span>
+          <span class="cat-badge">shopping</span>
+          <span class="cat-badge">games</span>
+        </div>
+      </div>
+
+      <div class="section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+        <div class="faq">
+          <div class="faq-item">
+            <h4>CI validation failed</h4>
+            <p>Common fixes:</p>
+            <ul>
+              <li><strong>Missing manifest.json</strong> &mdash; add it to your repo root</li>
+              <li><strong>Missing required fields</strong> &mdash; ensure <code>name</code> and <code>description</code> are present</li>
+              <li><strong>No entry point</strong> &mdash; create <code>server.ts</code>, <code>src/index.ts</code>, or <code>index.ts</code></li>
+              <li><strong>No icon</strong> &mdash; add <code>icon.png</code> (or <code>.svg</code>/<code>.jpg</code>)</li>
+              <li><strong>Missing README.md</strong> &mdash; add one to your repo root</li>
+            </ul>
+          </div>
+          <div class="faq-item">
+            <h4>App not appearing in the store</h4>
+            <p>Make sure the PR was merged (not just opened), the commit SHA is correct, and wait a few minutes for the sync pipeline.</p>
+          </div>
+          <div class="faq-item">
+            <h4>Auth header not received</h4>
+            <p>The <code>x-construct-auth</code> header is only present when the user has connected their account. Test locally by adding headers manually with <code>curl</code>.</p>
+          </div>
+          <div class="faq-item">
+            <h4>UI not loading</h4>
+            <p>Make sure <code>manifest.json</code> has the <code>ui</code> field, <code>ui/index.html</code> exists, and you're loading the SDK from <code>/sdk/construct.js</code> and <code>/sdk/construct.css</code>.</p>
           </div>
         </div>
       </div>
 
       <div class="publish-cta">
-        <h2>Ready to publish?</h2>
-        <p>Check out the <a href="https://github.com/construct-computer/construct-app-sample">DevTools reference app</a> to see a complete example.</p>
-        <a href="https://github.com/construct-computer/app-registry/fork" class="btn-primary" target="_blank" rel="noopener">Fork the Registry &rarr;</a>
+        <h2>Ready to build?</h2>
+        <div class="cta-links">
+          <a href="https://github.com/construct-computer/construct-app-hello-world" class="btn-primary" target="_blank" rel="noopener">Reference App &rarr;</a>
+          <a href="https://github.com/construct-computer/app-registry/fork" class="btn-outline" target="_blank" rel="noopener">Fork the Registry</a>
+          <a href="https://www.npmjs.com/package/@construct-computer/create-construct-app" class="btn-outline" target="_blank" rel="noopener">Scaffold CLI</a>
+        </div>
       </div>
     </div>`
 
-  return html(layout('Publish an App', content, 'publish'))
+  return html(layout('Build & Publish an App', content, 'publish'))
 }
 
 // ── Stylesheet ──
@@ -724,11 +1055,43 @@ const CSS = `
   .review-item p { font-size: 13px; color: var(--text-muted); }
 
   /* ── Publish page ── */
-  .publish-page { max-width: 720px; }
+  .publish-page { max-width: 780px; }
   .publish-page h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
-  .subtitle { color: var(--text-muted); font-size: 15px; margin-bottom: 40px; line-height: 1.6; }
+  .subtitle { color: var(--text-muted); font-size: 15px; margin-bottom: 32px; line-height: 1.7; }
 
-  .steps { display: flex; flex-direction: column; gap: 32px; margin-bottom: 48px; }
+  .publish-nav {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 40px;
+    padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  }
+  .toc-link {
+    padding: 4px 10px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500;
+    color: var(--text-muted); transition: color 0.15s, background 0.15s;
+  }
+  .toc-link:hover { color: var(--text); background: var(--surface-hover); text-decoration: none; }
+
+  .section { margin-bottom: 48px; }
+  .section h2 { font-size: 22px; font-weight: 700; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .section h3 { font-size: 16px; font-weight: 600; margin: 20px 0 10px; }
+  .section h4 { font-size: 14px; font-weight: 600; margin: 16px 0 8px; color: var(--text); }
+  .section p { font-size: 14px; color: var(--text-muted); line-height: 1.7; margin-bottom: 12px; }
+  .section ul { padding-left: 20px; font-size: 13px; color: var(--text-muted); line-height: 1.8; margin-bottom: 12px; }
+  .section li { margin-bottom: 4px; }
+
+  .field-table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13px; }
+  .field-table th { text-align: left; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); font-weight: 600; font-size: 12px; color: var(--text-muted); }
+  .field-table td { padding: 8px 12px; border: 1px solid var(--border); color: var(--text-muted); }
+  .field-table td:first-child { color: var(--accent); font-family: var(--mono); white-space: nowrap; }
+
+  .cat-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cat-badge { padding: 4px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 9999px; font-size: 13px; color: var(--text-muted); font-family: var(--mono); }
+
+  .faq { display: flex; flex-direction: column; gap: 20px; }
+  .faq-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; }
+  .faq-item h4 { font-size: 14px; margin: 0 0 8px; color: var(--text); }
+  .faq-item p { margin-bottom: 8px; }
+  .faq-item ul { margin-bottom: 0; }
+
+  .steps { display: flex; flex-direction: column; gap: 32px; }
   .step { display: flex; gap: 20px; }
   .step-num {
     width: 32px; height: 32px; flex-shrink: 0;
@@ -747,8 +1110,8 @@ const CSS = `
     text-align: center; padding: 40px; background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius-lg);
   }
-  .publish-cta h2 { font-size: 20px; margin-bottom: 8px; }
-  .publish-cta p { color: var(--text-muted); font-size: 14px; margin-bottom: 20px; }
+  .publish-cta h2 { font-size: 20px; margin-bottom: 16px; }
+  .cta-links { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 
   /* ── Scrollbar ── */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -762,5 +1125,11 @@ const CSS = `
     .detail-actions a { flex: 1; text-align: center; }
     .app-grid { grid-template-columns: 1fr; }
     .hero h1 { font-size: 22px; }
+    .publish-page h1 { font-size: 22px; }
+    .section h2 { font-size: 18px; }
+    .publish-nav { gap: 4px; }
+    .toc-link { font-size: 11px; padding: 3px 8px; }
+    .field-table { font-size: 12px; }
+    .field-table th, .field-table td { padding: 6px 8px; }
   }
 `
