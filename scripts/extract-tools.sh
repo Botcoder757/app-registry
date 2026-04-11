@@ -8,7 +8,7 @@ set -euo pipefail
 # Requires: REGISTRY_SYNC_URL, REGISTRY_SYNC_SECRET
 
 APPS_DIR="apps"
-APPS_HOST="https://apps.construct.computer"
+REGISTRY_API="https://registry.construct.computer/v1"
 
 echo "🔍 Extracting tool definitions from deployed apps..."
 
@@ -21,8 +21,16 @@ for pointer_file in "$APPS_DIR"/*.json; do
 
   echo -n "  $app_id: "
 
-  # Call the app's MCP tools/list endpoint
-  RESPONSE=$(curl -sf -X POST "$APPS_HOST/$app_id/mcp" \
+  # Resolve the canonical base URL (per-app subdomain with nanoid suffix)
+  # from the registry, then call its MCP tools/list endpoint.
+  BASE_URL=$(curl -sf "$REGISTRY_API/apps/$app_id" 2>/dev/null \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('base_url') or '')" 2>/dev/null || echo "")
+  if [ -z "$BASE_URL" ]; then
+    echo "⚠ no base_url in registry"
+    continue
+  fi
+
+  RESPONSE=$(curl -sf -X POST "$BASE_URL/mcp" \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"tools/list","id":1}' 2>/dev/null || echo '{"error":true}')
 

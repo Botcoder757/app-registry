@@ -3,19 +3,9 @@
   "description": "Developer toolkit — JSON formatter, Base64, hashing, UUID generator, timestamps, and URL encoding.",
   "versions": [
     {
-      "version": "1.0.0",
-      "commit": "0c3f98524f47050dbefc0c6fdbbb64bab9da9d30",
-      "date": "2026-03-24"
-    },
-    {
-      "version": "2.0.0",
-      "commit": "14ef73bcd949c350514dc5f72b11513846bb7044",
-      "date": "2026-04-04"
-    },
-    {
-      "version": "3.0.0",
-      "commit": "7a787620291b4b83e3252b856b1c476ee9a8782e",
-      "date": "2026-04-07"
+      "version": "0.1.0",
+      "commit": "5d07ff5fdaa1f79b00477ea3e8409142c6997f0a",
+      "date": "2026-04-11"
     }
   ]
 }
