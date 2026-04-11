@@ -717,24 +717,55 @@ export default {
 
     try {
       // ── Per-app subdomain — `${id}-${nanoid}.construct.computer` ─────
-      // Catches every first-level subdomain hit by the wildcard route. We
-      // resolve the label to an appId via subdomain_label and dispatch
-      // to handleAppProxy. Reserved labels (registry, www, api, …) and
-      // multi-level hosts fall through to the registry handlers below.
+      // The wildcard `*.construct.computer/*` route catches every first-level
+      // subdomain. We dispatch by hostname:
+      //   - `registry.construct.computer`         → registry HTML + API (handlers below)
+      //   - `<id>-<nanoid>.construct.computer`    → app proxy
+      //   - any other reserved label              → 421 Misdirected (see below)
+      //   - multi-level / non-construct hosts     → fall through
+      //
+      // The 421 case is defensive: hostnames like `staging.construct.computer`
+      // and `beta.construct.computer` belong to the construct worker via
+      // `custom_domain = true`. If they reach this worker it means Cloudflare
+      // routing for those hostnames is misconfigured (the construct worker
+      // probably needs to be redeployed to re-assert ownership). We must NOT
+      // serve the registry frontend under those hostnames — it would replace
+      // the actual product UI with the app store.
       if (hostname.endsWith('.construct.computer')) {
         const label = hostname.slice(0, -'.construct.computer'.length)
-        if (label && !label.includes('.') && !RESERVED_SUBDOMAINS.has(label)) {
-          const app = await env.DB.prepare(
-            "SELECT id FROM apps WHERE subdomain_label = ? AND status = 'active'"
-          ).bind(label).first<{ id: string }>()
-          if (app) {
-            return await handleAppProxy(app.id, path || '/', request, env)
+
+        if (label && !label.includes('.')) {
+          if (RESERVED_SUBDOMAINS.has(label)) {
+            // `registry` is the only reserved label this worker is allowed
+            // to serve under — everything else (staging, beta, www, api, …)
+            // belongs to a different worker.
+            if (label !== 'registry') {
+              return new Response(
+                `Misdirected request: ${hostname} is not served by the app registry. ` +
+                `This usually means the worker that owns this hostname needs to be redeployed.`,
+                {
+                  status: 421,
+                  headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+                },
+              )
+            }
+            // label === 'registry' → fall through to the HTML/API handlers.
+          } else {
+            // Per-app subdomain lookup.
+            const app = await env.DB.prepare(
+              "SELECT id FROM apps WHERE subdomain_label = ? AND status = 'active'"
+            ).bind(label).first<{ id: string }>()
+            if (app) {
+              return await handleAppProxy(app.id, path || '/', request, env)
+            }
+            return new Response('App not found', { status: 404, headers: CORS_HEADERS })
           }
-          return new Response('App not found', { status: 404, headers: CORS_HEADERS })
         }
       }
 
-      // HTML pages — registry.construct.computer
+      // HTML pages — registry.construct.computer only.
+      // Guarded by the hostname check above; reserved non-registry hosts
+      // already returned 421.
       if (request.method === 'GET') {
         if (path === '/')               return await browsePage(url, env)
         if (path === '/publish')        return publishPage()
