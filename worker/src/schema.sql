@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS apps (
   tools_json        TEXT,
   permissions_json  TEXT,
   -- Each published app gets a unique nanoid suffix so its hostname is
-  -- unguessable + collision-free. Hostname = `${id}-${subdomain_id}.construct.computer`.
+  -- unguessable + collision-free. Hostname = `${id}-${subdomain_id}.apps.construct.computer`.
   -- subdomain_label is the cached full label used for O(1) host lookup.
   subdomain_id      TEXT,
   subdomain_label   TEXT,
