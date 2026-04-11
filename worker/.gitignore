@@ -1,0 +1,7 @@
+node_modules
+.wrangler
+
+# Auto-generated bundle of published app handlers — produced by
+# scripts/bundle-apps.sh on every CI run from the apps/*.json pointer
+# files. Never edit by hand; never commit.
+src/apps/*.ts

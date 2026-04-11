@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "worker/**"
+      - "scripts/bundle-apps.sh"
   workflow_dispatch:
 
 jobs:
@@ -22,6 +23,12 @@ jobs:
       - name: Install dependencies
         working-directory: worker
         run: npm ci
+
+      # The src/apps/*.ts files are gitignored — bundle every published app
+      # at its pinned commit before deploying so the worker ships with the
+      # current set of handlers, not the empty stub from `npm install`.
+      - name: Bundle app handlers into worker
+        run: bash scripts/bundle-apps.sh
 
       - name: Deploy
         working-directory: worker
