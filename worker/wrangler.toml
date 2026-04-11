@@ -4,7 +4,11 @@ compatibility_date = "2024-12-01"
 
 routes = [
   { pattern = "registry.construct.computer", custom_domain = true },
-  { pattern = "apps.construct.computer", custom_domain = true },
+  # Per-app subdomains: each published app is served at
+  # `${id}-${nanoid}.construct.computer`. Requires a wildcard DNS record
+  # `*.construct.computer` (proxied) so unmatched first-level subdomains
+  # reach this worker.
+  { pattern = "*.construct.computer/*", zone_name = "construct.computer" },
 ]
 
 [vars]

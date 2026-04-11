@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS apps (
   base_url          TEXT,
   tools_json        TEXT,
   permissions_json  TEXT,
+  -- Each published app gets a unique nanoid suffix so its hostname is
+  -- unguessable + collision-free. Hostname = `${id}-${subdomain_id}.construct.computer`.
+  -- subdomain_label is the cached full label used for O(1) host lookup.
+  subdomain_id      TEXT,
+  subdomain_label   TEXT,
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL
 );
@@ -35,6 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_apps_category ON apps(category);
 CREATE INDEX IF NOT EXISTS idx_apps_featured ON apps(featured) WHERE featured = 1;
 CREATE INDEX IF NOT EXISTS idx_apps_verified ON apps(verified) WHERE verified = 1;
 CREATE INDEX IF NOT EXISTS idx_apps_status ON apps(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_apps_subdomain_label ON apps(subdomain_label);
 
 CREATE TABLE IF NOT EXISTS app_versions (
   app_id        TEXT NOT NULL,

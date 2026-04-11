@@ -86,8 +86,51 @@ interface AppRow {
   base_url: string | null
   tools_json: string | null
   permissions_json: string | null
+  subdomain_id: string | null
+  subdomain_label: string | null
   created_at: number
   updated_at: number
+}
+
+// ── Subdomain helpers ──────────────────────────────────────────────────────
+
+/**
+ * First-level subdomains that must NEVER be served as user apps. The wildcard
+ * route catches *.construct.computer; this set is the deny-list the worker
+ * checks at both publish time (refuse the upsert) and serve time (404).
+ */
+const RESERVED_SUBDOMAINS = new Set([
+  'registry', 'apps', 'api', 'www', 'mail', 'mx', 'auth',
+  'cdn', 'static', 'assets', 'docs', 'blog', 'app',
+  'beta', 'staging', 'production', 'dev', 'preview',
+  'admin', 'dashboard', 'status', 'support',
+  '_dmarc', '_domainkey',
+])
+
+const NANOID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
+
+/**
+ * Generate a 6-char DNS-safe nanoid (lowercase alnum). 36^6 ≈ 2.2B
+ * combinations, ample for any registry. crypto.getRandomValues is available
+ * in Workers; modulo bias is negligible for non-security uses.
+ */
+function generateNanoid(length = 6): string {
+  const bytes = new Uint8Array(length)
+  crypto.getRandomValues(bytes)
+  let out = ''
+  for (let i = 0; i < length; i++) out += NANOID_ALPHABET[bytes[i] % NANOID_ALPHABET.length]
+  return out
+}
+
+const APP_ID_RE = /^[a-z0-9][a-z0-9-]{0,40}[a-z0-9]?$/
+
+/**
+ * An app id is publishable iff it's a valid DNS label, ≤41 chars (so the
+ * combined `${id}-${nanoid}` stays comfortably under the 63-char DNS limit),
+ * and isn't on the reserved list.
+ */
+function isPublishableAppId(id: string): boolean {
+  return APP_ID_RE.test(id) && !RESERVED_SUBDOMAINS.has(id)
 }
 
 function formatApp(app: AppRow, full = false) {
@@ -105,7 +148,9 @@ function formatApp(app: AppRow, full = false) {
     featured: app.featured === 1,
     verified: app.verified === 1,
     has_ui: app.has_ui === 1,
-    base_url: `https://apps.construct.computer/${app.id}`,
+    base_url: app.subdomain_label
+      ? `https://${app.subdomain_label}.construct.computer`
+      : null,
     icon_url: buildIconUrl(app.repo_owner, app.repo_name, app.latest_commit, app.icon_path),
     repo_url: buildRepoUrl(app.repo_owner, app.repo_name),
     tools: app.tools_json ? JSON.parse(app.tools_json) : [],
@@ -338,13 +383,45 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
     const latestVersion = app.versions[app.versions.length - 1]
     if (!latestVersion) continue
 
+    // Reject ids that aren't valid as DNS labels or that collide with a
+    // reserved subdomain. This protects the wildcard route from squatting.
+    if (!isPublishableAppId(app.id)) {
+      console.warn(`Sync: rejecting invalid/reserved app id "${app.id}"`)
+      continue
+    }
+
+    // Look up existing subdomain_id; assign one on first publish. The label
+    // is stable across version bumps so installed users don't need to update.
+    const existing = await env.DB.prepare('SELECT subdomain_id FROM apps WHERE id = ?')
+      .bind(app.id)
+      .first<{ subdomain_id: string | null }>()
+
+    let subdomainId = existing?.subdomain_id || null
+    if (!subdomainId) {
+      // Try a few times in the (vanishingly unlikely) event of a collision.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate = generateNanoid()
+        const label = `${app.id}-${candidate}`
+        const collision = await env.DB.prepare('SELECT 1 FROM apps WHERE subdomain_label = ?')
+          .bind(label).first()
+        if (!collision) { subdomainId = candidate; break }
+      }
+      if (!subdomainId) {
+        console.error(`Sync: failed to allocate subdomain_id for "${app.id}"`)
+        continue
+      }
+    }
+    const subdomainLabel = `${app.id}-${subdomainId}`
+    const baseUrl = `https://${subdomainLabel}.construct.computer`
+
     // Upsert app
     await env.DB.prepare(`
       INSERT INTO apps (id, name, description, long_description, author_name, author_url,
         repo_owner, repo_name, icon_path, screenshot_count, category, tags,
         latest_version, latest_commit, has_ui, base_url, verified, tools_json, permissions_json,
+        subdomain_id, subdomain_label,
         status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         description = excluded.description,
@@ -364,6 +441,8 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
         verified = excluded.verified,
         tools_json = excluded.tools_json,
         permissions_json = excluded.permissions_json,
+        subdomain_id = excluded.subdomain_id,
+        subdomain_label = excluded.subdomain_label,
         updated_at = excluded.updated_at
     `).bind(
       app.id, app.name, app.description, app.long_description || null,
@@ -372,9 +451,10 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
       app.icon_path, app.screenshot_count,
       app.category, app.tags,
       latestVersion.version, latestVersion.commit,
-      app.has_ui ? 1 : 0, `https://apps.construct.computer/${app.id}`,
+      app.has_ui ? 1 : 0, baseUrl,
       app.verified ? 1 : 0,
       JSON.stringify(app.tools), JSON.stringify(app.permissions),
+      subdomainId, subdomainLabel,
       now, now
     ).run()
 
@@ -505,20 +585,11 @@ const CORS_HEADERS: HeadersInit = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-construct-auth, x-construct-user',
 }
 
-async function handleAppProxy(path: string, request: Request, env: Env): Promise<Response> {
-  // GET / — list available apps
-  if (path === '/' || path === '') {
-    const apps = await env.DB.prepare(
-      "SELECT id, name, description FROM apps WHERE status = 'active' ORDER BY name"
-    ).all<{ id: string; name: string; description: string }>()
-    return Response.json({ apps: apps.results || [] }, { headers: CORS_HEADERS })
-  }
-
-  // Construct SDK — served for app UIs
-  if (path.startsWith('/sdk/')) {
-    // Serve the Construct SDK from the main construct repo (or inline it)
-    // For now, return a minimal bridge that enables construct.tools.call() and construct.ui.*
-    const file = path.replace('/sdk/', '')
+async function handleAppProxy(appId: string, subpath: string, request: Request, env: Env): Promise<Response> {
+  // Construct SDK — served for app UIs (host-prefixed under each app's
+  // subdomain so the SDK loads with the same origin as the app).
+  if (subpath.startsWith('/sdk/')) {
+    const file = subpath.replace('/sdk/', '')
     if (file === 'construct.css') {
       return new Response(CONSTRUCT_SDK_CSS, { headers: { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...CORS_HEADERS } })
     }
@@ -527,15 +598,6 @@ async function handleAppProxy(path: string, request: Request, env: Env): Promise
     }
     return new Response('Not found', { status: 404 })
   }
-
-  // Extract appId from /{appId}/...
-  const match = path.match(/^\/([a-z0-9-]+)(\/.*)?$/)
-  if (!match) {
-    return Response.json({ error: 'Invalid path. Use /{appId}/mcp' }, { status: 400, headers: CORS_HEADERS })
-  }
-
-  const appId = match[1]
-  const subpath = match[2] || '/'
 
   // Health check
   if (subpath === '/health') {
@@ -654,9 +716,22 @@ export default {
     const hostname = url.hostname
 
     try {
-      // ── apps.construct.computer — App Runtime Proxy ──────────────────
-      if (hostname === 'apps.construct.computer') {
-        return await handleAppProxy(path, request, env)
+      // ── Per-app subdomain — `${id}-${nanoid}.construct.computer` ─────
+      // Catches every first-level subdomain hit by the wildcard route. We
+      // resolve the label to an appId via subdomain_label and dispatch
+      // to handleAppProxy. Reserved labels (registry, www, api, …) and
+      // multi-level hosts fall through to the registry handlers below.
+      if (hostname.endsWith('.construct.computer')) {
+        const label = hostname.slice(0, -'.construct.computer'.length)
+        if (label && !label.includes('.') && !RESERVED_SUBDOMAINS.has(label)) {
+          const app = await env.DB.prepare(
+            "SELECT id FROM apps WHERE subdomain_label = ? AND status = 'active'"
+          ).bind(label).first<{ id: string }>()
+          if (app) {
+            return await handleAppProxy(app.id, path || '/', request, env)
+          }
+          return new Response('App not found', { status: 404, headers: CORS_HEADERS })
+        }
       }
 
       // HTML pages — registry.construct.computer
