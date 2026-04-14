@@ -9,10 +9,23 @@ routes = [
   # level deep (under `apps`) so it never collides with first-level
   # construct hostnames like `staging.construct.computer` or
   # `beta.construct.computer` (which belong to the construct worker
-  # via custom_domain). Requires a wildcard DNS record
-  # `*.apps.construct.computer` (proxied) so all sub-subdomains reach
-  # this worker.
-  { pattern = "*.apps.construct.computer/*", zone_name = "construct.computer" },
+  # via custom_domain).
+  #
+  # SSL: Cloudflare's free Universal SSL only covers one wildcard
+  # depth, so `*.construct.computer` is covered but
+  # `*.apps.construct.computer` is NOT. To get a free cert covering
+  # the nested wildcard without paying for ACM, `apps.construct.computer`
+  # is set up as its own Cloudflare zone (delegated from the parent
+  # zone via NS records). That gives the sub-zone its own Universal
+  # SSL covering `apps.construct.computer` + `*.apps.construct.computer`.
+  #
+  # Requires (manual, one-time):
+  #   1. Add `apps.construct.computer` as a new Cloudflare zone
+  #   2. Add NS records in the parent `construct.computer` zone
+  #      pointing `apps` at the sub-zone's nameservers
+  #   3. Add a proxied wildcard A record `*` in the sub-zone
+  #   4. Wait for Universal SSL to provision (~15 min)
+  { pattern = "*.apps.construct.computer/*", zone_name = "apps.construct.computer" },
 ]
 
 [vars]
