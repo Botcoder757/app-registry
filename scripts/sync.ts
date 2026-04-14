@@ -176,6 +176,7 @@ for await (const entry of Deno.readDir("apps")) {
       description: t.description,
     })),
     permissions: manifest.permissions ?? {},
+    auth: manifest.auth ?? null,
     versions: versionArray,
   });
 

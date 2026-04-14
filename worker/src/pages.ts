@@ -91,6 +91,7 @@ interface AppData {
   repo_url: string
   tools: Array<{ name: string; description: string }>
   permissions: Record<string, unknown>
+  auth?: Record<string, unknown> | null
   screenshots?: string[]
   readme_url?: string
   versions?: Array<{ version: string; commit: string; changelog?: string | null; date: string }>
@@ -113,6 +114,7 @@ function appCard(app: AppData): string {
           <span class="meta-sep">&middot;</span>
           <span>${esc(app.category)}</span>
           ${app.has_ui ? '<span class="badge-ui">GUI</span>' : ''}
+          ${app.auth ? `<span class="badge-auth">${app.auth.oauth2 ? 'OAuth' : app.auth.apiKey ? 'API Key' : 'Auth'}</span>` : ''}
         </div>
       </div>
     </a>`
@@ -329,6 +331,7 @@ export async function appDetailPage(appId: string, env: { DB: D1Database }): Pro
             <span class="meta-sep">&middot;</span>
             <a href="/?category=${esc(app.category)}">${esc(app.category)}</a>
             ${app.has_ui ? '<span class="badge-ui">GUI</span>' : ''}
+            ${app.auth ? `<span class="badge-auth">${app.auth.oauth2 ? 'OAuth' : app.auth.apiKey ? 'API Key' : 'Auth'}</span>` : ''}
           </div>
         </div>
         <div class="detail-actions">
@@ -971,6 +974,7 @@ const CSS = `
   .stars { color: #facc15; letter-spacing: -1px; font-size: 12px; }
   .star-empty { opacity: 0.2; }
   .badge-ui { font-size: 9px; background: var(--accent-muted); color: var(--accent); padding: 1px 6px; border-radius: 9999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+  .badge-auth { font-size: 9px; background: #fef3c7; color: #d97706; padding: 1px 6px; border-radius: 9999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
   .tag { font-size: 11px; background: var(--surface-raised); color: var(--text-muted); padding: 2px 8px; border-radius: 9999px; }
 
   .empty { text-align: center; padding: 60px 20px; color: var(--text-subtle); }

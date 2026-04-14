@@ -86,6 +86,7 @@ interface AppRow {
   base_url: string | null
   tools_json: string | null
   permissions_json: string | null
+  auth_json: string | null
   subdomain_id: string | null
   subdomain_label: string | null
   created_at: number
@@ -156,6 +157,7 @@ function formatApp(app: AppRow, full = false) {
     repo_url: buildRepoUrl(app.repo_owner, app.repo_name),
     tools: app.tools_json ? JSON.parse(app.tools_json) : [],
     permissions: app.permissions_json ? JSON.parse(app.permissions_json) : {},
+    auth: app.auth_json ? JSON.parse(app.auth_json) : null,
   }
 
   if (!full) return base
@@ -419,10 +421,10 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare(`
       INSERT INTO apps (id, name, description, long_description, author_name, author_url,
         repo_owner, repo_name, icon_path, screenshot_count, category, tags,
-        latest_version, latest_commit, has_ui, base_url, verified, tools_json, permissions_json,
+        latest_version, latest_commit, has_ui, base_url, verified, tools_json, permissions_json, auth_json,
         subdomain_id, subdomain_label,
         status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         description = excluded.description,
@@ -442,6 +444,7 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
         verified = excluded.verified,
         tools_json = excluded.tools_json,
         permissions_json = excluded.permissions_json,
+        auth_json = excluded.auth_json,
         subdomain_id = excluded.subdomain_id,
         subdomain_label = excluded.subdomain_label,
         updated_at = excluded.updated_at
@@ -455,6 +458,7 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
       app.has_ui ? 1 : 0, baseUrl,
       app.verified ? 1 : 0,
       JSON.stringify(app.tools), JSON.stringify(app.permissions),
+      app.auth ? JSON.stringify(app.auth) : null,
       subdomainId, subdomainLabel,
       now, now
     ).run()
