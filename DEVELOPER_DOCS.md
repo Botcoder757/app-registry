@@ -145,7 +145,7 @@ my-app/
 
 ## manifest.json Reference
 
-The manifest declares your app's metadata. It's validated against the [JSON Schema](https://registry.construct.computer/schemas/manifest.json).
+The manifest declares your app's metadata. The shape is described by the JSON Schema at [`https://registry.construct.computer/schemas/manifest.json`](https://registry.construct.computer/schemas/manifest.json) — add it as `$schema` for autocomplete + inline validation in VS Code and other editors. The registry's CI re-checks required fields at PR time.
 
 ### Minimal Example
 
@@ -207,26 +207,24 @@ The manifest declares your app's metadata. It's validated against the [JSON Sche
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `$schema` | string | No | JSON Schema URL for IDE validation. Always include this. |
-| `name` | string | **Yes** | Display name (1–50 chars). Shown in the App Store and Launchpad. |
-| `description` | string | **Yes** | Short description (1–200 chars). Shown in search results and app cards. |
+| `$schema` | string | No | JSON Schema URL for IDE validation. Always include `https://registry.construct.computer/schemas/manifest.json`. |
+| `name` | string | **Yes** | Display name. Shown in the App Store and Launchpad. |
+| `description` | string | **Yes** | Short description. Shown in search results and app cards. |
 | `author` | object | No | `{ "name": string, "url?": string }` — Author info. |
-| `owners` | string[] | No | GitHub logins allowed to manage this app's env vars via the [Developer Dashboard](#environment-variables--developer-dashboard). |
+| `owners` | string[] | No | GitHub logins (lowercase, `^[a-z0-9][a-z0-9-]{0,38}$`). **Gates who can submit registry PRs bumping this app's pinned commit, and who can manage env vars via the [Developer Dashboard](#environment-variables--developer-dashboard).** |
 | `icon` | string | No | Relative path to icon file. Defaults to `icon.png`. |
-| `categories` | string[] | No | Array of category IDs (see [Categories](#categories)). Max 1 recommended. |
-| `tags` | string[] | No | Searchable tags for discovery. Max 10, each max 30 chars. |
+| `categories` | string[] | No | Category IDs (see [Categories](#categories)). Only the first entry is used; extras are ignored. |
+| `tags` | string[] | No | Searchable tags for discovery. |
 | `ui` | object | No | UI configuration. Omit for tools-only apps. |
 | `ui.entry` | string | No | Entry point relative to repo root. Default: `ui/index.html`. |
-| `ui.width` | integer | No | Default window width. Default: 800, range: 200–2000. |
-| `ui.height` | integer | No | Default window height. Default: 600, range: 200–2000. |
+| `ui.width` | integer | No | Default window width. Default: 800. |
+| `ui.height` | integer | No | Default window height. Default: 600. |
 | `auth` | object | No | Authentication configuration — see [Authentication](#authentication). |
 | `auth.schemes` | array | No | Array of supported auth schemes. The user picks one when connecting. |
 | `permissions` | object | No | Declared permissions shown to users during install. |
 | `permissions.network` | string[] | No | External domains this app connects to. |
 | `permissions.storage` | string | No | Maximum storage needed (e.g., `"1MB"`). |
 | `tools` | array | No | Pre-declared tool list. Auto-discovered on deploy if omitted. |
-
-> **Tip:** Add `"$schema": "https://registry.construct.computer/schemas/manifest.json"` to get autocomplete and validation in VS Code and other editors.
 
 ---
 
@@ -414,10 +412,15 @@ If your app has a visual interface, create a `ui/index.html` file and add the `u
 
 ### How UIs Work
 
-1. Your `ui/index.html` (and any CSS/JS/images) is served from GitHub's CDN at the pinned commit
-2. Construct loads it in a **sandboxed iframe** inside a desktop window
-3. The `construct.js` and `construct.css` SDK files are available at `/sdk/construct.js` and `/sdk/construct.css`
-4. Your UI communicates with the platform and your MCP server via `window.postMessage`
+1. Your `ui/index.html` (and any CSS/JS/images under `ui/`) is proxied by the registry worker from `raw.githubusercontent.com/{owner}/{repo}/{commit}/ui/...` at the pinned commit, and served from your app's subdomain at `/ui/*`.
+2. Construct loads it in a **sandboxed iframe** inside a desktop window.
+3. Load the Construct SDK from the registry's canonical URL:
+   - **`https://registry.construct.computer/sdk/construct.js`** — core bridge (`tools`, `ui`, `ready`).
+   - **`https://registry.construct.computer/sdk/construct.css`** — design-system CSS variables + utility classes.
+   These are served with CORS open and `Cache-Control: public, max-age=3600`. Use the same URL in dev and prod — no dev-server inlining, no relative `/sdk/` paths to worry about.
+4. Your UI communicates with the platform and your MCP server via `window.postMessage` through the SDK bridge.
+
+> **Construct-desktop injection:** When the iframe is mounted inside Construct, the desktop fetches your HTML, strips any `<script src=".../construct.js">` / `<link href=".../construct.css">` tags, and injects its own inline bridge that additionally exposes `construct.state` and `construct.agent` (desktop-only APIs). So outside of Construct (e.g. opening `http://localhost:8787/` directly in a browser) the registry-hosted SDK loads as-is and you get the core API only; inside Construct the richer bridge replaces it automatically.
 
 ### Minimal UI Example
 
@@ -428,8 +431,8 @@ If your app has a visual interface, create a `ui/index.html` file and add the `u
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My App</title>
-  <link rel="stylesheet" href="/sdk/construct.css">
-  <script src="/sdk/construct.js"></script>
+  <link rel="stylesheet" href="https://registry.construct.computer/sdk/construct.css">
+  <script src="https://registry.construct.computer/sdk/construct.js"></script>
 </head>
 <body>
   <div class="app">
@@ -497,7 +500,7 @@ export default {
 };
 ```
 
-> **Note:** In production, UI files are served from GitHub's CDN — the ASSETS binding is only for local development.
+> **Note:** In production the registry proxies UI files from your GitHub repo at the pinned commit. The `ASSETS` binding above is only for local `wrangler dev`. You do **not** need to serve `/sdk/*` from your own worker — load the SDK from `https://registry.construct.computer/sdk/construct.{js,css}` in both dev and prod.
 
 ---
 
@@ -505,7 +508,7 @@ export default {
 
 The SDK is a `postMessage` bridge that lets your app's UI communicate with the Construct platform. It works through two layers:
 
-1. **`/sdk/construct.js`** — The core bridge loaded in your `ui/index.html`. Provides `tools`, `ui`, and `ready`.
+1. **`https://registry.construct.computer/sdk/construct.js`** — The core bridge loaded in your `ui/index.html`. Provides `tools`, `ui`, and `ready`.
 2. **Construct desktop bridge** — When your app runs inside Construct, the parent frame provides additional methods (`state`, `agent`) via the same bridge.
 
 > **Note:** When testing your UI locally outside of Construct, only the core methods (`tools`, `ui`, `ready`) are available. The `state` and `agent` namespaces require the Construct desktop environment.
@@ -515,8 +518,8 @@ The SDK is a `postMessage` bridge that lets your app's UI communicate with the C
 Add these two lines to your `ui/index.html`:
 
 ```html
-<link rel="stylesheet" href="/sdk/construct.css">
-<script src="/sdk/construct.js"></script>
+<link rel="stylesheet" href="https://registry.construct.computer/sdk/construct.css">
+<script src="https://registry.construct.computer/sdk/construct.js"></script>
 ```
 
 ### Core API (always available)
@@ -840,14 +843,25 @@ curl -X POST http://localhost:8787/mcp \
 ### Test in Construct
 
 1. Start your dev server: `npm run dev`
-2. Open Construct and go to **App Registry > Installed**
-3. Find **"Developer Tools"** at the bottom
-4. Enter your app name and `http://localhost:8787` as the URL
-5. Click **"Install from URL"**
+2. Open Construct → **Settings** → **Developer**
+3. Toggle **Developer Mode** on
+4. Under **Connect Dev Server**, paste `http://localhost:8787` and click **Connect**
 
-Your app's tools are now available to the Construct agent.
+Construct validates your server by calling `GET /health` and `POST /mcp` (`initialize` + `tools/list`), then registers your app with the agent. Click **Open App** to launch your UI in a desktop window.
 
-> **Tip:** For remote testing, use [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/app-network/create-tunnel/) to create a tunnel: `cloudflared tunnel --url http://localhost:8787`
+**What Construct probes on your dev server:**
+
+| Request | Purpose |
+|---------|---------|
+| `GET /health` | Liveness check; must return HTTP 200 |
+| `POST /mcp` (`initialize`) | Read server name/version |
+| `POST /mcp` (`tools/list`) | Register tools with the agent |
+| `HEAD /`, `HEAD /ui/index.html`, `HEAD /index.html` | UI entry-point detection (content-type must include `html`) |
+| `GET /icon.png`, `GET /icon.svg`, `GET /favicon.ico` | Icon for the Dev window header |
+
+When the window opens, Construct fetches your HTML and strips any `<script src="…construct.js">` / `<link href="…construct.css">` tags before injecting its own inline bridge (which additionally exposes `construct.state` and `construct.agent`). Your template references the registry-hosted SDK so the same HTML works in both standalone browser testing (outside Construct) and inside the desktop.
+
+> **Tip:** For remote testing, use [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/app-network/create-tunnel/) to create a tunnel: `cloudflared tunnel --url http://localhost:8787`, then paste the tunnel URL in **Connect Dev Server**.
 
 ### Test with auth headers
 
@@ -994,7 +1008,6 @@ Fork [construct-computer/app-registry](https://github.com/construct-computer/app
 ```json
 {
   "repo": "https://github.com/you/construct-app-myapp",
-  "description": "A short description for the registry listing",
   "versions": [
     {
       "version": "1.0.0",
@@ -1005,18 +1018,24 @@ Fork [construct-computer/app-registry](https://github.com/construct-computer/app
 }
 ```
 
-> **Note:** The app ID (filename without `.json`) must be kebab-case: lowercase letters, numbers, and hyphens only.
+The pointer only needs `repo` and `versions`. The store listing (name, description, icon, etc.) is read from your repo's `manifest.json` at the pinned commit.
+
+**App ID rules** (filename without `.json`):
+- Must match `^[a-z0-9][a-z0-9-]{0,40}[a-z0-9]?$` (kebab-case, DNS-safe, ≤42 chars).
+- Reserved names cannot be used: `registry`, `apps`, `api`, `www`, `mail`, `mx`, `auth`, `cdn`, `static`, `assets`, `docs`, `blog`, `app`, `beta`, `staging`, `production`, `dev`, `preview`, `admin`, `dashboard`, `status`, `support`.
+- The registry allocates a permanent random suffix, so your app lives at `https://{your-app-id}-{nanoid}.apps.construct.computer`.
 
 ### Step 5: Open a pull request
 
-CI will automatically validate your app:
+CI (`.github/workflows/validate-pr.yml`) will automatically validate your app:
 
 - Clones your repo at the pinned commit
 - Validates `manifest.json` has required fields (`name`, `description`)
+- **Ownership check:** if `manifest.owners[]` is set, the PR author's GitHub login must be in it (case-insensitive). On the first publish (no `owners[]` yet) the PR passes but CI warns that future bumps will require an owner. Add yourself and co-maintainers to `owners[]` on day one to lock down your app id.
 - Checks that an entry point exists (`server.ts`, `src/index.ts`, or `index.ts`)
 - Verifies `icon.png` (or `.svg`/`.jpg`) exists
 - Verifies `README.md` exists
-- Type-checks your server (via `npm build` or `deno check`)
+- Type-checks your server (via `npm run build` if `package.json` exists, otherwise `deno check`)
 
 Once a maintainer reviews and merges your PR:
 
@@ -1040,7 +1059,6 @@ To publish a new version:
 ```json
 {
   "repo": "https://github.com/you/construct-app-myapp",
-  "description": "A short description for the registry listing",
   "versions": [
     { "version": "1.0.0", "commit": "abc123...", "date": "2026-04-01" },
     { "version": "1.1.0", "commit": "def456...", "date": "2026-04-10" }
@@ -1049,6 +1067,8 @@ To publish a new version:
 ```
 
 The **last entry** in the `versions` array becomes the "latest" version shown in the store. Previous versions are still available in the version history.
+
+> **Bumps require ownership.** If your app's `manifest.owners[]` lists anyone, only those GitHub logins can open version-bump PRs. If you need a coworker to publish, add their login to `owners[]` in your app repo first, then they can open the bump PR.
 
 ---
 
@@ -1104,27 +1124,55 @@ Use these category IDs in your manifest's `categories` array:
 
 ## API Reference
 
-The public registry API is at `https://registry.construct.computer`.
+### Registry API — `https://registry.construct.computer`
+
+Public, cached, no auth:
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/v1/apps` | List/search apps. Params: `q`, `category`, `sort` (`popular`/`recent`/`rating`/`name`), `page`, `limit` |
 | `GET` | `/v1/apps/:id` | App detail — metadata, versions, reviews |
-| `GET` | `/v1/apps/:id/download` | Redirect to repo tarball (latest version) |
-| `GET` | `/v1/apps/:id/download/:version` | Redirect to repo tarball (specific version) |
+| `GET` | `/v1/apps/:id/download` | 302 redirect to repo tarball (latest version) and increments install count |
+| `GET` | `/v1/apps/:id/download/:version` | 302 redirect to repo tarball for a specific version |
 | `GET` | `/v1/categories` | Categories with app counts |
 | `GET` | `/v1/featured` | Featured apps and collections |
 | `GET` | `/v1/curated` | Curated third-party integrations |
+| `GET` | `/health` | Liveness check |
 
-The app runtime is at `https://apps.construct.computer`.
+Internal / authenticated (used by the registry's own CI and the Construct backend):
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/{appId}/mcp` | MCP JSON-RPC endpoint for the app |
-| `GET` | `/{appId}/ui/*` | Proxy UI files from GitHub at pinned commit |
-| `GET` | `/{appId}/icon` | Proxy app icon from GitHub |
-| `GET` | `/sdk/construct.css` | Construct SDK CSS |
-| `GET` | `/sdk/construct.js` | Construct SDK JavaScript bridge |
+| `POST` | `/v1/sync` | Upsert app data from `apps/*.json`. Requires `Authorization: Bearer $SYNC_SECRET`. |
+| `POST` | `/v1/apps/:id/installed` | Increment install count (fire-and-forget). |
+| `POST` | `/v1/apps/:id/tools` | Update cached tool definitions after deploy. Requires `Authorization: Bearer $SYNC_SECRET`. |
+
+### App runtime — per-app subdomain
+
+Every published app is routed from its own DNS label under `apps.construct.computer`:
+
+```
+https://{your-app-id}-{nanoid}.apps.construct.computer
+```
+
+The `{nanoid}` suffix is allocated on first publish and stays stable across version bumps. Find the exact URL for your app in `/v1/apps/:id` → `base_url`.
+
+All routes below are served from **that subdomain** (not from `apps.construct.computer` directly and not with any `{appId}` prefix):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/mcp` | MCP JSON-RPC endpoint. Dispatches to your bundled handler. |
+| `GET` | `/health` | Liveness check — returns `ok`. |
+| `GET` | `/ui`, `/ui/*` | UI files — proxied from `raw.githubusercontent.com/{owner}/{repo}/{commit}/...` at the pinned commit. `/ui` and `/ui/` map to `/ui/index.html`. |
+| `GET` | `/icon`, `/icon.png` | App icon — proxied from the repo at the pinned commit. |
+| `GET` | `/sdk/construct.css` | Construct SDK CSS, same-origin mirror. Canonical URL is `https://registry.construct.computer/sdk/construct.css` — prefer that. |
+| `GET` | `/sdk/construct.js` | Construct SDK bridge, same-origin mirror. Canonical URL is `https://registry.construct.computer/sdk/construct.js` — prefer that. |
+
+**Headers injected by the registry** on every `POST /mcp` dispatch (you cannot set these from outside — they are stripped and rewritten per-call):
+
+- `x-construct-user` — authenticated user id (when available).
+- `x-construct-auth` — JSON-encoded credentials when the user has connected this app (see [Authentication](#authentication)).
+- `x-construct-env` — base64-encoded JSON of your app's developer-dashboard env vars (see [Environment Variables](#environment-variables--developer-dashboard)).
 
 ---
 
@@ -1141,7 +1189,8 @@ Common validation errors:
 | No entry point found | Create `server.ts`, `src/index.ts`, or `index.ts` |
 | No icon file found | Add `icon.png` (256×256), `icon.svg`, or `icon.jpg` |
 | Missing `README.md` | Add a `README.md` to your repo root |
-| `npm build` failed | Check that your `server.ts` compiles without errors |
+| `npm run build` failed | Check that your `server.ts` compiles without errors |
+| PR author not in `owners[]` | The registry PR author's GitHub login must be listed in `manifest.owners[]` once the array is non-empty. Add them in a PR to the app repo, bump the pinned commit, then re-open the registry PR. |
 
 ### My app doesn't appear in the store
 
@@ -1159,7 +1208,7 @@ This means your app handler isn't bundled in the worker yet. Check that:
 
 - Make sure `manifest.json` has the `ui` field
 - Check that `ui/index.html` exists in your repo
-- Verify the SDK paths: `/sdk/construct.js` and `/sdk/construct.css`
+- Verify your HTML loads the SDK from `https://registry.construct.computer/sdk/construct.js` and `.../construct.css`
 - Test locally with `wrangler dev` and the `[assets]` config
 
 ### Auth header not received

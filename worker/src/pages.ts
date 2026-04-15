@@ -485,12 +485,13 @@ curl -X POST http://localhost:8787/mcp \\
 
       <div class="section" id="manifest">
         <h2>manifest.json</h2>
-        <p>Defines your app's metadata for the store listing. Validated against the <a href="https://registry.construct.computer/schemas/manifest.json">JSON Schema</a>.</p>
+        <p>Defines your app's metadata. The shape is described by the <a href="/schemas/manifest.json">JSON Schema</a> &mdash; set <code>$schema</code> to get editor autocomplete + validation. CI re-checks required fields at PR time.</p>
         <pre><code>{
   "$schema": "https://registry.construct.computer/schemas/manifest.json",
   "name": "My App",
   "description": "A short one-line description of what your app does.",
   "author": { "name": "Your Name", "url": "https://github.com/you" },
+  "owners": ["your-github-login"],
   "icon": "icon.png",
   "categories": ["utilities"],
   "tags": ["example", "demo"],
@@ -504,24 +505,24 @@ curl -X POST http://localhost:8787/mcp \\
         <table class="field-table">
           <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>name</code></td><td>string</td><td>Display name (1&ndash;50 chars). Shown in the store and Launchpad.</td></tr>
-            <tr><td><code>description</code></td><td>string</td><td>Short description (1&ndash;200 chars). Shown in search results.</td></tr>
+            <tr><td><code>name</code></td><td>string</td><td>Display name. Shown in the store and Launchpad.</td></tr>
+            <tr><td><code>description</code></td><td>string</td><td>Short description. Shown in search results.</td></tr>
           </tbody>
         </table>
         <h4>Optional fields</h4>
         <table class="field-table">
           <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>$schema</code></td><td>string</td><td>JSON Schema URL &mdash; enables autocomplete in editors.</td></tr>
             <tr><td><code>author</code></td><td>object</td><td><code>{ "name": string, "url?": string }</code></td></tr>
+            <tr><td><code>owners</code></td><td>string[]</td><td>GitHub logins (lowercase, <code>^[a-z0-9][a-z0-9-]{0,38}$</code>). Gates who can submit registry PRs bumping this app's pinned commit, and who can manage env vars via the developer dashboard.</td></tr>
             <tr><td><code>icon</code></td><td>string</td><td>Relative path to icon file. Default: <code>"icon.png"</code>.</td></tr>
-            <tr><td><code>categories</code></td><td>string[]</td><td>Category IDs. See <a href="#categories">Categories</a> below.</td></tr>
-            <tr><td><code>tags</code></td><td>string[]</td><td>Searchable tags. Max 10, each max 30 chars.</td></tr>
+            <tr><td><code>categories</code></td><td>string[]</td><td>Only the first entry is used; extras are ignored. See <a href="#categories">Categories</a> below.</td></tr>
+            <tr><td><code>tags</code></td><td>string[]</td><td>Searchable tags.</td></tr>
             <tr><td><code>ui</code></td><td>object</td><td>UI config. Omit for tools-only apps.</td></tr>
             <tr><td><code>ui.entry</code></td><td>string</td><td>Entry point. Default: <code>"ui/index.html"</code>.</td></tr>
-            <tr><td><code>ui.width</code></td><td>integer</td><td>Window width in pixels. Default: 800, range: 200&ndash;2000.</td></tr>
-            <tr><td><code>ui.height</code></td><td>integer</td><td>Window height in pixels. Default: 600, range: 200&ndash;2000.</td></tr>
-            <tr><td><code>auth</code></td><td>object</td><td>OAuth2 config. See <a href="#auth">Authentication</a>.</td></tr>
+            <tr><td><code>ui.width</code></td><td>integer</td><td>Window width in pixels. Default: 800.</td></tr>
+            <tr><td><code>ui.height</code></td><td>integer</td><td>Window height in pixels. Default: 600.</td></tr>
+            <tr><td><code>auth</code></td><td>object</td><td>Auth config. See <a href="#auth">Authentication</a>.</td></tr>
             <tr><td><code>permissions</code></td><td>object</td><td>Permissions shown during install. <code>{ "network": ["api.example.com"] }</code></td></tr>
             <tr><td><code>tools</code></td><td>array</td><td>Pre-declared tool list. Auto-discovered on deploy if omitted.</td></tr>
           </tbody>
@@ -673,17 +674,31 @@ run_worker_first = ["/*"]</code></pre>
       </div>
 
       <div class="section" id="auth">
-        <h2>Authentication (OAuth2)</h2>
-        <p>If your app connects to an external API that requires user login, use OAuth2:</p>
+        <h2>Authentication</h2>
+        <p>Construct supports four auth schemes: <code>oauth2</code>, <code>api_key</code>, <code>bearer</code>, and <code>basic</code>. Declare any combination in <code>auth.schemes[]</code>; the user picks one when connecting.</p>
 
-        <h4>1. Declare auth in your manifest:</h4>
+        <h4>1. Declare auth schemes in your manifest:</h4>
         <pre><code>"auth": {
-  "oauth2": {
-    "authorization_url": "https://api.example.com/oauth/authorize",
-    "token_url": "https://api.example.com/oauth/token",
-    "scopes": ["read", "write"]
-  }
+  "schemes": [
+    {
+      "type": "oauth2",
+      "label": "Sign in with Example",
+      "authorization_url": "https://api.example.com/oauth/authorize",
+      "token_url": "https://api.example.com/oauth/token",
+      "scopes": ["read", "write"],
+      "scope_separator": " "
+    },
+    {
+      "type": "api_key",
+      "label": "Use API Key",
+      "instructions": "Get your key at https://api.example.com/settings/keys",
+      "fields": [
+        { "name": "api_key", "displayName": "API Key", "type": "password", "required": true }
+      ]
+    }
+  ]
 }</code></pre>
+        <p>OAuth <code>client_id</code> / <code>client_secret</code> are <strong>not</strong> put in the manifest. They are stored as platform secrets (<code>APP_OAUTH_&lt;APP_ID&gt;_CLIENT_ID</code> / <code>_CLIENT_SECRET</code>); open an issue on the registry repo to have them added.</p>
 
         <h4>2. Guard authenticated tools:</h4>
         <pre><code>import { requireAuth } from '@construct-computer/app-sdk';
@@ -692,14 +707,19 @@ app.tool('get_my_account', {
   description: 'Get the authenticated user account',
   handler: async (args, ctx) =&gt; {
     requireAuth(ctx); // throws if not authenticated
+    // ctx.auth.type is 'oauth2' | 'api_key' | 'bearer' | 'basic'
+    // OAuth: ctx.auth.access_token / refresh_token / expires_at
+    // api_key/bearer: whichever field name you declared
+    // basic: ctx.auth.username, ctx.auth.password
+    const token = ctx.auth.access_token || ctx.auth.api_key;
     const res = await fetch('https://api.example.com/me', {
-      headers: { Authorization: \`Bearer \${ctx.auth.access_token}\` },
+      headers: { Authorization: \`Bearer \${token}\` },
     });
     return await res.text();
   },
 });</code></pre>
 
-        <p>Mix public and authenticated tools in the same app. The platform injects auth credentials via the <code>x-construct-auth</code> header when the user has connected their account.</p>
+        <p>Mix public and authenticated tools in the same app. The platform injects auth credentials via the <code>x-construct-auth</code> header when the user has connected their account. OAuth tokens are refreshed automatically before dispatch.</p>
       </div>
 
       <div class="section" id="testing">
@@ -720,9 +740,9 @@ curl -X POST http://localhost:8787/mcp \\
   -H 'Content-Type: application/json' \\
   -H 'x-construct-auth: {"access_token":"test-token","user_id":"user-123"}' \\
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"hello","arguments":{"name":"World"}},"id":2}'</code></pre>
-        <p><strong>Test in Construct:</strong> Open App Registry &rarr; Installed &rarr; Developer Tools. Enter your app name and <code>http://localhost:8787</code>.
+        <p><strong>Test in Construct:</strong> Open Construct &rarr; <strong>Settings</strong> &rarr; <strong>Developer</strong>, toggle <em>Developer Mode</em> on, paste <code>http://localhost:8787</code> into <em>Connect Dev Server</em>, and click <em>Connect</em>. Construct validates <code>/health</code> + <code>/mcp</code>, registers your tools with the agent, and opens your UI in a sandboxed window.</p>
 
-        <p><strong>Remote testing:</strong> Use <a href="https://developers.cloudflare.com/cloudflare-one/connections/app-network/create-tunnel/" target="_blank" rel="noopener">cloudflared tunnel</a> to expose your local server:</p>
+        <p><strong>Remote testing:</strong> Use <a href="https://developers.cloudflare.com/cloudflare-one/connections/app-network/create-tunnel/" target="_blank" rel="noopener">cloudflared tunnel</a> to expose your local server, then paste the tunnel URL into <em>Connect Dev Server</em>:</p>
         <pre><code>cloudflared tunnel --url http://localhost:8787</code></pre>
       </div>
 
@@ -773,7 +793,6 @@ git push -u origin main</code></pre>
               <p>Fork <a href="https://github.com/construct-computer/app-registry" target="_blank" rel="noopener">construct-computer/app-registry</a> and add <code>apps/{your-app-id}.json</code>:</p>
               <pre><code>{
   "repo": "https://github.com/you/construct-app-myapp",
-  "description": "A short description for the registry listing",
   "versions": [
     {
       "version": "1.0.0",
@@ -782,7 +801,8 @@ git push -u origin main</code></pre>
     }
   ]
 }</code></pre>
-              <p>The app ID (filename without <code>.json</code>) must be <strong>kebab-case</strong>: lowercase letters, numbers, and hyphens only.</p>
+              <p>The pointer only needs <code>repo</code> and <code>versions</code>. The listing (name, description, icon, etc.) is read from your repo's <code>manifest.json</code> at the pinned commit.</p>
+              <p>The app ID (filename without <code>.json</code>) must match <code>^[a-z0-9][a-z0-9-]{0,40}[a-z0-9]?$</code> and not be a reserved name (<code>registry</code>, <code>apps</code>, <code>api</code>, <code>www</code>, <code>auth</code>, <code>admin</code>, etc.). The registry appends a random suffix, so your app lives at <code>{your-app-id}-{nanoid}.apps.construct.computer</code>.</p>
             </div>
           </div>
 
@@ -793,10 +813,10 @@ git push -u origin main</code></pre>
               <p>CI automatically validates your submission:</p>
               <ul>
                 <li>Clones your repo at the pinned commit</li>
-                <li>Validates <code>manifest.json</code> has required fields</li>
-                <li>Checks that your entry point compiles</li>
-                <li>Verifies <code>icon.png</code> and <code>README.md</code> exist</li>
-                <li>Flags dangerous permissions for review</li>
+                <li>Validates <code>manifest.json</code> has <code>name</code> and <code>description</code></li>
+                <li>Enforces the <strong>ownership gate</strong>: if <code>manifest.owners[]</code> is set, the PR author's GitHub login must be in it</li>
+                <li>Checks that <code>server.ts</code> / <code>src/index.ts</code> / <code>index.ts</code> exists and compiles (<code>npm run build</code> or <code>deno check</code>)</li>
+                <li>Verifies <code>icon.png</code> (or <code>.svg</code>/<code>.jpg</code>) and <code>README.md</code> exist</li>
               </ul>
               <p>Once a maintainer approves and merges, your app goes live within minutes!</p>
             </div>
@@ -809,13 +829,13 @@ git push -u origin main</code></pre>
         <p>Push the update to your repo, then open a PR to the registry adding a new version:</p>
         <pre><code>{
   "repo": "https://github.com/you/construct-app-myapp",
-  "description": "A short description for the registry listing",
   "versions": [
     { "version": "1.0.0", "commit": "abc123...", "date": "2026-04-01" },
     { "version": "1.1.0", "commit": "def456...", "date": "2026-04-10" }
   ]
 }</code></pre>
         <p>The <strong>last entry</strong> in the <code>versions</code> array becomes the current version. Previous versions remain accessible in the version history.</p>
+        <p>Bumps require the PR author to be in <code>manifest.owners[]</code> (when set), so add co-maintainers there in your app repo before they try to publish.</p>
       </div>
 
       <div class="section" id="categories">

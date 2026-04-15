@@ -23,6 +23,8 @@ import { browsePage, appDetailPage, publishPage } from './pages'
 import { APP_HANDLERS } from './apps/registry'
 import { handleDevRequest } from './dev'
 import { decryptValue } from './lib/crypto'
+import { MANIFEST_SCHEMA } from './lib/manifest-schema'
+import { CONSTRUCT_SDK_JS, CONSTRUCT_SDK_CSS, SDK_RESPONSE_HEADERS_JS, SDK_RESPONSE_HEADERS_CSS } from './lib/construct-sdk'
 
 interface Env {
   DB: D1Database
@@ -580,54 +582,9 @@ async function incrementInstall(id: string, env: Env): Promise<Response> {
   return json({ ok: true })
 }
 
-// ── Construct SDK (inline, served from /sdk/) ──
-
-const CONSTRUCT_SDK_CSS = `/* Construct SDK — Design System */
-:root{--c-bg:#0a0a12;--c-surface:rgba(255,255,255,0.04);--c-surface-hover:rgba(255,255,255,0.06);--c-surface-raised:rgba(255,255,255,0.08);--c-text:#e4e4ed;--c-text-secondary:rgba(228,228,237,0.7);--c-text-muted:rgba(228,228,237,0.4);--c-accent:#6366f1;--c-accent-muted:rgba(99,102,241,0.15);--c-border:rgba(255,255,255,0.08);--c-error:#ef4444;--c-error-border:rgba(239,68,68,0.3);--c-error-muted:rgba(239,68,68,0.08);--c-radius-xs:4px;--c-radius-sm:6px;--c-radius-md:10px;--c-shadow:0 1px 3px rgba(0,0,0,0.3);--c-font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--c-font-mono:"SF Mono",SFMono-Regular,Menlo,Consolas,monospace}
-*{box-sizing:border-box;margin:0;padding:0}body{font-family:var(--c-font);background:var(--c-bg);color:var(--c-text);-webkit-font-smoothing:antialiased}
-.app{min-height:100vh}.container{max-width:560px;margin:0 auto}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:6px 14px;border-radius:var(--c-radius-sm);font-size:12px;font-weight:600;font-family:var(--c-font);border:none;cursor:pointer;background:var(--c-accent);color:#fff;transition:all 0.15s}
-.btn:hover{filter:brightness(1.1)}.btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:6px 14px;border-radius:var(--c-radius-sm);font-size:12px;font-weight:500;font-family:var(--c-font);border:1px solid var(--c-border);cursor:pointer;background:var(--c-surface);color:var(--c-text-secondary);transition:all 0.15s}
-.btn-secondary:hover{background:var(--c-surface-hover);color:var(--c-text)}.btn-sm{padding:5px 10px;font-size:11px}
-.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:var(--c-radius-xs);font-size:10px;font-weight:500;background:var(--c-surface);color:var(--c-text-muted);border:1px solid var(--c-border)}
-.badge-accent{background:var(--c-accent-muted);color:var(--c-accent);border-color:transparent}
-.fade-in{animation:fadeIn 200ms ease-out}@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-`
-
-const CONSTRUCT_SDK_JS = [
-  '/* Construct SDK — Bridge */',
-  '(function(){',
-  'var pending={};var idCounter=0;',
-  'function sendRequest(method,params){',
-  'return new Promise(function(resolve,reject){',
-  'var id=String(++idCounter);',
-  'pending[id]={resolve:resolve,reject:reject};',
-  'window.parent.postMessage({type:"construct:request",id:id,method:method,params:params||{}},"*");',
-  '});',
-  '}',
-  'window.addEventListener("message",function(e){',
-  'if(!e.data||e.data.type!=="construct:response")return;',
-  'var p=pending[e.data.id];if(!p)return;delete pending[e.data.id];',
-  'if(e.data.error)p.reject(new Error(e.data.error));else p.resolve(e.data.result);',
-  '});',
-  'window.construct={',
-  'tools:{',
-  'call:function(name,args){return sendRequest("tools.call",{tool:name,arguments:args||{}});},',
-  'callText:function(name,args){return this.call(name,args).then(function(r){',
-  'if(r&&r.ok!==undefined)r=r.result;',
-  'if(r&&r.content&&r.content[0])return r.content[0].text||JSON.stringify(r);',
-  'if(typeof r==="string")return r;return JSON.stringify(r);',
-  '});}',
-  '},',
-  'ui:{',
-  'setTitle:function(t){return sendRequest("ui.setTitle",{title:t});},',
-  'getTheme:function(){return sendRequest("ui.getTheme");},',
-  'close:function(){return sendRequest("ui.close");}',
-  '},',
-  'ready:function(fn){if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",fn);else fn();}',
-  '};',
-  '})();',
-].join('\n')
+// SDK constants live in ./lib/construct-sdk so they can be served both from
+// the registry host (stable canonical URL) and from per-app subdomains.
+// See that module for the actual SDK source strings.
 
 // ── App Runtime Proxy (*.apps.construct.computer) ──
 
@@ -701,10 +658,10 @@ async function handleAppProxy(appId: string, subpath: string, request: Request, 
   if (subpath.startsWith('/sdk/')) {
     const file = subpath.replace('/sdk/', '')
     if (file === 'construct.css') {
-      return new Response(CONSTRUCT_SDK_CSS, { headers: { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...CORS_HEADERS } })
+      return new Response(CONSTRUCT_SDK_CSS, { headers: SDK_RESPONSE_HEADERS_CSS })
     }
     if (file === 'construct.js') {
-      return new Response(CONSTRUCT_SDK_JS, { headers: { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', ...CORS_HEADERS } })
+      return new Response(CONSTRUCT_SDK_JS, { headers: SDK_RESPONSE_HEADERS_JS })
     }
     return new Response('Not found', { status: 404 })
   }
@@ -915,6 +872,30 @@ export default {
       if (request.method === 'GET') {
         if (path === '/')               return await browsePage(url, env)
         if (path === '/publish')        return publishPage()
+
+        // JSON Schema for manifest.json. Referenced via the `$schema` field
+        // in app manifests; cached aggressively since it changes rarely.
+        if (path === '/schemas/manifest.json') {
+          return new Response(JSON.stringify(MANIFEST_SCHEMA, null, 2), {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/schema+json; charset=utf-8',
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'public, max-age=3600',
+            },
+          })
+        }
+
+        // Construct SDK — canonical cross-origin URL that app UIs load
+        // directly (in both local dev and production). CORS is open so
+        // any app origin (localhost:8787, cloudflared tunnel, or the
+        // published subdomain) can fetch it.
+        if (path === '/sdk/construct.js') {
+          return new Response(CONSTRUCT_SDK_JS, { status: 200, headers: SDK_RESPONSE_HEADERS_JS })
+        }
+        if (path === '/sdk/construct.css') {
+          return new Response(CONSTRUCT_SDK_CSS, { status: 200, headers: SDK_RESPONSE_HEADERS_CSS })
+        }
 
         // /apps/:id (HTML detail page — no /v1/ prefix)
         const htmlAppMatch = path.match(/^\/apps\/([a-z0-9-]+)$/)

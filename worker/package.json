@@ -8,6 +8,9 @@
     "db:migrate": "wrangler d1 execute app-registry --file=src/schema.sql",
     "prepare": "node scripts/stub-registry.mjs"
   },
+  "dependencies": {
+    "@construct-computer/app-sdk": "^0.2.2"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",
     "wrangler": "^3.99.0",
