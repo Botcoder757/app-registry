@@ -148,7 +148,7 @@ async function logout(request: Request, env: DevEnv): Promise<Response> {
     `<!doctype html><html><head><meta charset="utf-8"><title>Logged out</title></head>` +
     `<body style="background:#0a0a12;color:#e4e4ed;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">` +
     `<p>Signing out…</p>` +
-    `<script>setTimeout(function(){window.location.href='/dev/login';},300);</script>` +
+    `<script>setTimeout(function(){window.location.href='/';},300);</script>` +
     `</body></html>`,
     {
       status: 200,
