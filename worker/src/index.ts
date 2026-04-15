@@ -21,12 +21,27 @@
 
 import { browsePage, appDetailPage, publishPage } from './pages'
 import { APP_HANDLERS } from './apps/registry'
+import { handleDevRequest } from './dev'
+import { decryptValue } from './lib/crypto'
 
 interface Env {
   DB: D1Database
   SYNC_SECRET: string
   ENVIRONMENT: string
+  // Dev dashboard — GitHub OAuth + session cookies + per-app env var encryption
+  GITHUB_CLIENT_ID?: string
+  GITHUB_CLIENT_SECRET?: string
+  SESSION_SECRET?: string
+  ENV_ENCRYPTION_KEY?: string
 }
+
+// Headers that must NEVER arrive at a bundled app handler from the outside.
+// We strip them on every dispatch so the only place x-construct-env can be
+// set is inside handleAppProxy after we've looked up the caller's real appId.
+const INTERNAL_HEADERS_TO_STRIP = [
+  'x-construct-env',
+  'x-construct-env-sig',
+]
 
 // ── Helpers ──
 
@@ -346,6 +361,10 @@ interface SyncAppPayload {
   verified?: boolean
   tools: Array<{ name: string; description: string }>
   permissions: Record<string, unknown>
+  auth?: Record<string, unknown> | null
+  // GitHub logins listed in manifest.owners[] — these users can manage the
+  // app's env vars via the /dev dashboard.
+  owners?: string[]
   versions: Array<{
     version: string
     commit: string
@@ -480,6 +499,28 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
       ).run()
     }
 
+    // Sync owners from manifest (if the table exists — it's added by
+    // migration 002). We replace the full set per app so removing a
+    // login from manifest.owners[] immediately revokes their dashboard
+    // access. Env vars themselves are untouched (they stay in app_env_vars
+    // and remain usable by the app runtime until manually deleted).
+    if (Array.isArray(app.owners)) {
+      const cleaned = app.owners
+        .map((o) => String(o).trim().toLowerCase())
+        .filter((o) => /^[a-z0-9][a-z0-9-]{0,38}$/.test(o))
+      try {
+        await env.DB.prepare('DELETE FROM app_owners WHERE app_id = ?').bind(app.id).run()
+        for (const login of cleaned) {
+          await env.DB.prepare(
+            `INSERT OR IGNORE INTO app_owners (app_id, github_login, added_at) VALUES (?, ?, ?)`,
+          ).bind(app.id, login, now).run()
+        }
+      } catch (err) {
+        // Table may not exist yet if migration 002 hasn't run; don't block sync.
+        console.warn(`owners sync skipped for ${app.id}:`, err instanceof Error ? err.message : err)
+      }
+    }
+
     synced++
   }
 
@@ -590,6 +631,64 @@ const CORS_HEADERS: HeadersInit = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-construct-auth, x-construct-user',
 }
 
+/**
+ * Fetch and decrypt env vars scoped to a single app, then return a Request
+ * with stripped incoming `x-construct-env*` and a freshly set internal
+ * header containing ONLY this app's variables.
+ *
+ * We always strip the inbound headers — even when the app has no env vars —
+ * so a caller can't poison other apps' state by pre-setting them.
+ *
+ * Values are never logged and never attached to the Worker's top-level env
+ * binding; they live only on the Request instance passed to this one app's
+ * handler.
+ */
+async function buildScopedRequest(appId: string, request: Request, env: Env): Promise<Request> {
+  const headers = new Headers(request.headers)
+  for (const h of INTERNAL_HEADERS_TO_STRIP) headers.delete(h)
+
+  let envObj: Record<string, string> | null = null
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT name, value_encrypted FROM app_env_vars WHERE app_id = ?`,
+    ).bind(appId).all<{ name: string; value_encrypted: string }>()
+
+    if (results && results.length > 0) {
+      if (!env.ENV_ENCRYPTION_KEY) {
+        console.error(`App ${appId} has env vars but ENV_ENCRYPTION_KEY is not set`)
+      } else {
+        envObj = {}
+        for (const row of results) {
+          try {
+            envObj[row.name] = await decryptValue(row.value_encrypted, env.ENV_ENCRYPTION_KEY)
+          } catch (err) {
+            console.error(`Failed to decrypt ${appId}.${row.name}:`, err)
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`Failed to load env for ${appId}:`, err)
+  }
+
+  if (envObj && Object.keys(envObj).length > 0) {
+    // base64-encoded JSON (easier for app handlers to parse than raw JSON,
+    // and keeps arbitrary byte values safe for HTTP headers).
+    const json = JSON.stringify(envObj)
+    const b64 = btoa(unescape(encodeURIComponent(json)))
+    headers.set('x-construct-env', b64)
+  }
+
+  // Preserve method/body; we only rewrote headers.
+  return new Request(request.url, {
+    method: request.method,
+    headers,
+    body: request.body,
+    // @ts-ignore — duplex is required in some runtimes when body is a stream
+    duplex: 'half',
+  })
+}
+
 async function handleAppProxy(appId: string, subpath: string, request: Request, env: Env): Promise<Response> {
   // Construct SDK — served for app UIs (host-prefixed under each app's
   // subdomain so the SDK loads with the same origin as the app).
@@ -609,7 +708,16 @@ async function handleAppProxy(appId: string, subpath: string, request: Request, 
     return new Response('ok', { headers: CORS_HEADERS })
   }
 
-  // MCP endpoint — call bundled app handler directly
+  // MCP endpoint — call bundled app handler directly.
+  //
+  // Per-app env vars arrive here via the x-construct-env header. Isolation
+  // model: we strip any inbound x-construct-env (so an outside caller can
+  // never spoof another app's env), then look up THIS app's env vars only
+  // (scoped by appId from the router, not from anything app code can set),
+  // decrypt with ENV_ENCRYPTION_KEY, and hand the new Request to the
+  // targeted app handler. Values never touch the global Worker env binding,
+  // and a second app's handler never receives a Request that carries
+  // another app's env.
   if (subpath === '/mcp' && request.method === 'POST') {
     const handler = APP_HANDLERS[appId]
     if (!handler) {
@@ -619,8 +727,10 @@ async function handleAppProxy(appId: string, subpath: string, request: Request, 
       )
     }
 
+    const scopedRequest = await buildScopedRequest(appId, request, env)
+
     try {
-      const response = await handler(request)
+      const response = await handler(scopedRequest)
       // Add CORS headers to the response
       const body = await response.text()
       return new Response(body, {
@@ -763,6 +873,35 @@ export default {
             status: 421,
             headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
           },
+        )
+      }
+
+      // Developer dashboard — /dev/* on registry.construct.computer. Needs
+      // GITHUB_CLIENT_ID/SECRET + SESSION_SECRET + ENV_ENCRYPTION_KEY; if
+      // those aren't set the handler returns a clear 503.
+      if (path === '/dev' || path.startsWith('/dev/')) {
+        if (
+          !env.DB ||
+          !env.SESSION_SECRET ||
+          !env.ENV_ENCRYPTION_KEY ||
+          !env.GITHUB_CLIENT_ID ||
+          !env.GITHUB_CLIENT_SECRET
+        ) {
+          return new Response(
+            'Developer dashboard is not configured on this worker. Required secrets: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SESSION_SECRET, ENV_ENCRYPTION_KEY.',
+            { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+          )
+        }
+        return await handleDevRequest(
+          request,
+          {
+            DB: env.DB,
+            GITHUB_CLIENT_ID: env.GITHUB_CLIENT_ID,
+            GITHUB_CLIENT_SECRET: env.GITHUB_CLIENT_SECRET,
+            SESSION_SECRET: env.SESSION_SECRET,
+            ENV_ENCRYPTION_KEY: env.ENV_ENCRYPTION_KEY,
+          },
+          url,
         )
       }
 

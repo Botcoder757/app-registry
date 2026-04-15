@@ -97,3 +97,39 @@ CREATE TABLE IF NOT EXISTS curated_apps (
 
 CREATE INDEX IF NOT EXISTS idx_curated_category ON curated_apps(category);
 CREATE INDEX IF NOT EXISTS idx_curated_source ON curated_apps(source);
+
+-- ── Developer dashboard (migration 002) ────────────────────────────────────
+-- See migrations/002_add_dev_dashboard.sql for full notes on the isolation
+-- model. Per-app env vars are decrypted only during dispatch to the targeted
+-- app's handler and never placed in the Worker's env binding.
+
+CREATE TABLE IF NOT EXISTS app_owners (
+  app_id       TEXT NOT NULL,
+  github_login TEXT NOT NULL,
+  added_at     INTEGER NOT NULL,
+  PRIMARY KEY (app_id, github_login),
+  FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_app_owners_login ON app_owners(github_login);
+
+CREATE TABLE IF NOT EXISTS dev_sessions (
+  id             TEXT PRIMARY KEY,
+  github_user_id INTEGER NOT NULL,
+  github_login   TEXT NOT NULL,
+  created_at     INTEGER NOT NULL,
+  expires_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dev_sessions_user ON dev_sessions(github_user_id);
+CREATE INDEX IF NOT EXISTS idx_dev_sessions_expires ON dev_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS app_env_vars (
+  app_id          TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  value_encrypted TEXT NOT NULL,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  updated_by      TEXT NOT NULL,
+  PRIMARY KEY (app_id, name),
+  FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_app_env_vars_app ON app_env_vars(app_id);

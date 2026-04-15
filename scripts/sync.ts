@@ -31,6 +31,8 @@ interface Manifest {
   tools?: Array<{ name: string; description: string }>;
   permissions?: Record<string, unknown>;
   auth?: Record<string, unknown>;
+  // GitHub logins allowed to manage the app via the /dev dashboard.
+  owners?: string[];
 }
 
 const apps: unknown[] = [];
@@ -177,6 +179,11 @@ for await (const entry of Deno.readDir("apps")) {
     })),
     permissions: manifest.permissions ?? {},
     auth: manifest.auth ?? null,
+    owners: Array.isArray(manifest.owners)
+      ? manifest.owners
+          .map((o) => String(o).trim().toLowerCase())
+          .filter((o) => /^[a-z0-9][a-z0-9-]{0,38}$/.test(o))
+      : [],
     versions: versionArray,
   });
 

@@ -165,6 +165,7 @@ The manifest declares your app's metadata. It's validated against the [JSON Sche
   "name": "My App",
   "description": "A short one-line description of what your app does.",
   "author": { "name": "Your Name", "url": "https://github.com/your-username" },
+  "owners": ["your-github-login"],
   "icon": "icon.png",
   "categories": ["utilities"],
   "tags": ["example", "demo"],
@@ -210,6 +211,7 @@ The manifest declares your app's metadata. It's validated against the [JSON Sche
 | `name` | string | **Yes** | Display name (1–50 chars). Shown in the App Store and Launchpad. |
 | `description` | string | **Yes** | Short description (1–200 chars). Shown in search results and app cards. |
 | `author` | object | No | `{ "name": string, "url?": string }` — Author info. |
+| `owners` | string[] | No | GitHub logins allowed to manage this app's env vars via the [Developer Dashboard](#environment-variables--developer-dashboard). |
 | `icon` | string | No | Relative path to icon file. Defaults to `icon.png`. |
 | `categories` | string[] | No | Array of category IDs (see [Categories](#categories)). Max 1 recommended. |
 | `tags` | string[] | No | Searchable tags for discovery. Max 10, each max 30 chars. |
@@ -857,6 +859,98 @@ curl -X POST http://localhost:8787/mcp \
   -H 'x-construct-auth: {"access_token":"test-token","user_id":"user-123"}' \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_my_account","arguments":{}},"id":1}'
 ```
+
+---
+
+## Environment Variables & Developer Dashboard
+
+Registry apps run bundled inside a shared Cloudflare Worker, so you can't
+set secrets on your own Worker script the way you would for a standalone
+app. Instead, Construct provides a **developer dashboard** where app owners
+manage per-app env vars that the platform injects at dispatch time.
+
+### Why use it
+
+- API keys, shared secrets, webhook tokens — anything you'd normally put in
+  `wrangler.toml` or `wrangler secret put`.
+- Values are **scoped to your app only**. The registry decrypts them just
+  before calling your handler and passes them as a request header. Other
+  apps running in the same bundled worker never receive them.
+- Updates take effect on the next request after you save — no re-deploy.
+
+### Declare owners in your manifest
+
+Add your GitHub login (and any co-maintainers) to `manifest.json`:
+
+```json
+{
+  "name": "My App",
+  "owners": ["your-github-login", "coworker-login"],
+  ...
+}
+```
+
+After the PR merges, sign in at **<https://registry.construct.computer/dev>**
+with GitHub. You'll see each app whose `owners[]` contains your login.
+
+### Set env vars from the dashboard
+
+1. Go to `https://registry.construct.computer/dev/apps/<your-app-id>`
+2. Enter a `NAME` (must match `^[A-Z][A-Z0-9_]{0,63}$`) and `value`
+3. Save — the value is AES-256-GCM encrypted at rest. Names with the
+   `CF_`, `CLOUDFLARE_`, or `CONSTRUCT_` prefix are reserved.
+
+Only logged-in users listed in the app's `owners[]` can see or modify these;
+values are never shown back, only their names and last-updated timestamps.
+
+### Read env vars from your app
+
+The registry sets the `x-construct-env` header on the request that reaches
+your handler. The header value is base64-encoded JSON containing **only
+your app's** variables (stripped + replaced on every dispatch, so nothing
+from outside can leak in).
+
+Using the SDK `ctx.request`:
+
+```ts
+function readEnv(request: Request): Record<string, string> {
+  const raw = request.headers.get('x-construct-env');
+  if (!raw) return {};
+  try {
+    return JSON.parse(atob(raw));
+  } catch {
+    return {};
+  }
+}
+
+app.tool('webhook_ping', {
+  description: 'Send a ping to the webhook configured in env.',
+  handler: async (_args, ctx) => {
+    const env = readEnv(ctx.request);
+    const url = env.WEBHOOK_URL;
+    if (!url) return '(WEBHOOK_URL is not set; open the developer dashboard to configure it)';
+    await fetch(url, { method: 'POST' });
+    return 'pinged';
+  },
+});
+```
+
+### Isolation guarantees (and limits)
+
+Because registry apps share a single Worker isolate, isolation is
+defense-in-depth rather than kernel-level:
+
+- **Bound**: the registry looks up env vars from D1 using the *router-
+  determined* app id (your app's subdomain), not anything the app code can
+  set. Another app cannot ask for your env, and your env is never placed in
+  the global Worker `env` binding.
+- **Bound**: any inbound `x-construct-env*` header is stripped before
+  dispatch, so callers can't pre-seed one.
+- **Unbound**: apps sharing an isolate can still, in principle, monkey-
+  patch globals like `fetch` or `Headers.prototype.get` at module load time.
+  Don't publish apps that do this, and don't treat co-tenant apps as fully
+  untrusted. For highly sensitive workloads, run your own Worker outside
+  the registry and connect via an external base URL.
 
 ---
 

@@ -73,6 +73,22 @@ jobs:
               cd -; continue
             fi
 
+            # Ownership check: if manifest.owners is present, the PR author
+            # must be in it. This gates who can bump an app's pinned commit,
+            # which in turn gates who can publish new code under an app id.
+            # Case-insensitive match on GitHub login.
+            pr_author='${{ github.event.pull_request.user.login }}'
+            owners_count=$(jq -r '(.owners // []) | length' manifest.json)
+            if [ "$owners_count" = "0" ]; then
+              SUMMARY="$SUMMARY\n⚠️  $app_id has no \`owners[]\` in manifest.json — this PR is allowed for backwards compatibility, but set \`owners\` soon to lock down future bumps and enable the developer dashboard."
+            else
+              if ! jq -e --arg who "$(echo "$pr_author" | tr '[:upper:]' '[:lower:]')" \
+                     '[.owners[] | ascii_downcase] | index($who)' manifest.json > /dev/null; then
+                ERRORS="$ERRORS\n- $app_id: PR author @$pr_author is not listed in manifest.json \`owners[]\` ($(jq -r '.owners | join(", ")' manifest.json)). Add them in a PR to the app repo first."
+                cd -; continue
+              fi
+            fi
+
             # Check for a server entry point (server.ts or src/index.ts)
             has_entry="false"
             for entry in server.ts src/index.ts index.ts; do
