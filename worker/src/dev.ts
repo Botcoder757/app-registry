@@ -36,6 +36,7 @@ import {
   sessionCookie,
   type DevSession,
 } from './lib/session';
+import { layout } from './lib/ui';
 
 export interface DevEnv {
   DB: D1Database;
@@ -400,151 +401,7 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function layout(title: string, body: string, session?: DevSession | null): string {
-  const userMenu = session
-    ? `<div class="user-menu">
-         <button class="user-trigger" onclick="this.parentElement.classList.toggle('open')">
-           <img src="https://github.com/${escapeHtml(session.githubLogin)}.png?size=32" alt="" class="user-avatar" onerror="this.style.display='none'">
-           <span>@${escapeHtml(session.githubLogin)}</span>
-           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-         </button>
-         <div class="user-dropdown">
-           <a href="/dev/dashboard">Dashboard</a>
-           <form action="/dev/logout" method="post">
-             <button type="submit">Sign out</button>
-           </form>
-         </div>
-       </div>`
-    : '';
-  return `<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHtml(title)} · Construct Developer</title>
-<style>
-:root{--bg:#0a0a12;--bg-subtle:#18181b;--fg:#e4e4ed;--muted:rgba(228,228,237,0.6);--faint:rgba(228,228,237,0.35);--surface:rgba(255,255,255,0.04);--surface-hover:rgba(255,255,255,0.07);--surface-raised:rgba(255,255,255,0.08);--border:rgba(255,255,255,0.09);--border-strong:rgba(255,255,255,0.18);--accent:#60A5FA;--accent-hover:#93C5FD;--accent-muted:rgba(96,165,250,0.12);--danger:#ef4444;--ok:#10b981;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;--radius:8px;--radius-sm:6px;--radius-lg:12px}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;min-height:100vh}
-.container{max-width:1000px;margin:0 auto;padding:32px 24px 96px}
 
-/* Nav */
-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:40px;padding-bottom:16px;border-bottom:1px solid var(--border)}
-nav a.logo{color:var(--fg);text-decoration:none;font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px}
-nav a.logo:hover{color:var(--accent)}
-
-/* User Menu */
-.user-menu{position:relative}
-.user-trigger{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--fg);font-size:13px;cursor:pointer;transition:all .15s}
-.user-trigger:hover{background:var(--surface-hover);border-color:var(--border-strong)}
-.user-avatar{width:24px;height:24px;border-radius:50%;background:var(--bg-subtle)}
-.user-dropdown{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:6px;min-width:140px;opacity:0;visibility:hidden;transform:translateY(-4px);transition:all .15s;z-index:100}
-.user-menu.open .user-dropdown{opacity:1;visibility:visible;transform:translateY(0)}
-.user-dropdown a,.user-dropdown button{display:block;width:100%;padding:8px 12px;border-radius:var(--radius-sm);font-size:13px;color:var(--fg);text-decoration:none;background:transparent;border:none;text-align:left;cursor:pointer}
-.user-dropdown a:hover,.user-dropdown button:hover{background:var(--surface-hover)}
-.user-dropdown form{margin:0;padding:0}
-.user-dropdown button{color:var(--danger)}
-
-/* Typography */
-h1{font-size:24px;font-weight:700;margin-bottom:6px}
-h2{font-size:18px;font-weight:600;margin:32px 0 16px;color:var(--fg)}
-p.lede{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:28px}
-
-/* Cards */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
-.card+.card{margin-top:12px}
-
-/* App Cards Grid */
-.apps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:24px}
-.app-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;transition:all .15s;display:flex;flex-direction:column}
-.app-card:hover{background:var(--surface-hover);border-color:var(--border-strong);transform:translateY(-2px)}
-.app-card-header{display:flex;align-items:center;gap:14px;margin-bottom:16px}
-.app-card-icon{width:48px;height:48px;border-radius:var(--radius);object-fit:cover;background:var(--bg-subtle)}
-.app-card-title{flex:1;min-width:0}
-.app-card-title h3{font-size:15px;font-weight:600;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.app-card-title .repo{font-size:12px;color:var(--faint)}
-.app-card-meta{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.badge{font-size:11px;padding:3px 10px;border-radius:999px;background:var(--surface-raised);color:var(--muted)}
-.badge-accent{background:var(--accent-muted);color:var(--accent)}
-.app-card-footer{margin-top:auto;display:flex;gap:8px}
-
-/* Empty State */
-.empty{text-align:center;padding:64px 24px;color:var(--muted);border:2px dashed var(--border);border-radius:var(--radius-lg)}
-.empty-icon{font-size:48px;margin-bottom:16px;opacity:.5}
-.empty h3{font-size:16px;font-weight:600;margin-bottom:8px;color:var(--fg)}
-.empty p{font-size:14px;margin-bottom:20px}
-
-/* Login Card */
-.login-card{max-width:400px;margin:80px auto;text-align:center;padding:40px 32px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)}
-.login-card h1{margin-bottom:8px;font-size:22px}
-.login-card p{color:var(--muted);font-size:14px;margin-bottom:28px;line-height:1.6}
-
-/* Buttons */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:var(--radius);background:var(--accent);color:#fff;text-decoration:none;border:none;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
-.btn:hover{filter:brightness(1.1);transform:translateY(-1px)}
-.btn-secondary{background:var(--surface-hover);border:1px solid var(--border);color:var(--fg)}
-.btn-secondary:hover{background:var(--surface-raised)}
-.btn-gh{background:#24292f}
-.btn-sm{padding:6px 12px;font-size:12px}
-
-/* App Detail Layout */
-.app-layout{display:grid;grid-template-columns:1fr 320px;gap:24px}
-@media(max-width:768px){.app-layout{grid-template-columns:1fr}}
-.main-content{min-width:0}
-.sidebar{position:sticky;top:24px;height:fit-content}
-.sidebar-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
-.sidebar-section h3{font-size:13px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
-
-/* Env Vars */
-.env-list{display:flex;flex-direction:column;gap:8px}
-.env-item{display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface-raised);border-radius:var(--radius);border:1px solid var(--border)}
-.env-key{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);min-width:120px}
-.env-meta{flex:1;font-size:12px;color:var(--faint)}
-.env-actions{display:flex;gap:6px}
-
-/* Forms */
-.form-group{margin-bottom:16px}
-.form-group label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:500}
-.form-row{display:flex;gap:10px;align-items:flex-start}
-input[type=text],input[type=password]{flex:1;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--fg);font-family:var(--mono);font-size:13px;outline:none}
-input:focus{border-color:var(--accent)}
-
-/* Flash */
-.flash{padding:12px 16px;border-radius:var(--radius);margin-bottom:20px;font-size:13px;border:1px solid transparent}
-.flash-ok{background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.25);color:var(--ok)}
-.flash-error{background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.3);color:var(--danger)}
-
-/* Code */
-code{font-family:var(--mono);background:var(--surface-hover);padding:2px 6px;border-radius:4px;font-size:12px}
-
-/* Scrollbar */
-::-webkit-scrollbar{width:8px;height:8px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:999px}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.15)}
-
-@media(max-width:640px){
-  .container{padding:20px 16px 64px}
-  h1{font-size:20px}
-  .apps-grid{grid-template-columns:1fr}
-  .app-layout{grid-template-columns:1fr}
-  .sidebar{position:static}
-  .form-row{flex-direction:column}
-  .env-item{flex-direction:column;align-items:flex-start;gap:8px}
-}
-</style>
-</head><body>
-<div class="container">
-<nav>
-  <a href="/dev/dashboard" class="logo">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-    Developer Portal
-  </a>
-  ${userMenu}
-</nav>
-${body}
-</div>
-</body></html>`;
-}
 
 function renderLogin(): string {
   return layout(
@@ -559,7 +416,7 @@ function renderLogin(): string {
   </a>
 </div>
 `,
-    null,
+    { activePage: 'dev' }
   );
 }
 
@@ -599,11 +456,13 @@ function renderDashboard(session: DevSession, apps: OwnedApp[]): string {
   return layout(
     'Dashboard',
     `
+<div class="container">
 <h1>Developer Dashboard</h1>
 <p class="lede">Manage environment variables for your Construct apps.</p>
 ${content}
+</div>
 `,
-    session,
+    { activePage: 'dev', session }
   );
 }
 
@@ -636,6 +495,7 @@ function renderAppPage(
   return layout(
     app.name,
     `
+<div class="container">
 ${flashPlaceholder}
 <div class="app-layout">
   <main class="main-content">
@@ -666,14 +526,15 @@ ${flashPlaceholder}
     
     <div class="sidebar-section">
       <h3>About</h3>
-      <p style="font-size:12px;color:var(--muted);line-height:1.6">
+      <p style="font-size:13px;color:var(--text-secondary);line-height:1.6">
         Environment variables are encrypted and only available to your app at runtime. 
         Values are never displayed after creation.
       </p>
     </div>
   </aside>
+</div>
 </div>`,
-    session,
+    { activePage: 'dev', session }
   );
 }
 
@@ -686,6 +547,7 @@ function htmlErrorPage(title: string, detail: string, status = 400): Response {
          <p>${escapeHtml(detail)}</p>
          <a class="btn" href="/dev/dashboard">Back to dashboard</a>
        </div>`,
+      { activePage: 'dev' }
     ),
     { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } },
   );

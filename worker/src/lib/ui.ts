@@ -464,6 +464,8 @@ export const CSS = `
 
   .btn-secondary { background: var(--surface-hover); color: var(--text); }
   .btn-secondary:hover { background: var(--surface-active); }
+  .btn-gh { background: #24292f; color: #fff; }
+  .btn-gh:hover { background: #2c3238; color: #fff; text-decoration: none; }
   .btn-sm { padding: 6px 14px; font-size: 13px; }
 
   pre {
