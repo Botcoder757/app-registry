@@ -30,6 +30,7 @@ function layout(title: string, content: string, activePage = ''): string {
       <div class="nav-links">
         <a href="/" class="${activePage === 'browse' ? 'active' : ''}">Browse</a>
         <a href="/publish" class="${activePage === 'publish' ? 'active' : ''}">Publish</a>
+        <a href="/dev/dashboard" class="${activePage === 'dev' ? 'active' : ''}">Developer Portal</a>
         <a href="https://github.com/construct-computer/app-registry" target="_blank" rel="noopener">GitHub</a>
         <a href="https://construct.computer" target="_blank" rel="noopener">construct.computer</a>
       </div>
@@ -169,6 +170,25 @@ export async function browsePage(url: URL, env: { DB: D1Database }): Promise<Res
     permissions: r.permissions_json ? JSON.parse(r.permissions_json) : {},
   }))
 
+  // Fetch featured apps for the hero section
+  const { results: featuredResults } = await env.DB.prepare(
+    "SELECT * FROM apps WHERE featured = 1 AND status = 'active' ORDER BY install_count DESC LIMIT 6"
+  ).all()
+  
+  const featuredApps: AppData[] = (featuredResults || []).map((r: any) => ({
+    id: r.id, name: r.name, description: r.description,
+    author: { name: r.author_name, url: r.author_url },
+    category: r.category,
+    tags: r.tags ? r.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
+    latest_version: r.latest_version, install_count: r.install_count,
+    avg_rating: r.avg_rating, rating_count: r.rating_count,
+    featured: r.featured === 1, verified: r.verified === 1, has_ui: r.has_ui === 1,
+    icon_url: `https://raw.githubusercontent.com/${r.repo_owner}/${r.repo_name}/${r.latest_commit}/${r.icon_path}`,
+    repo_url: `https://github.com/${r.repo_owner}/${r.repo_name}`,
+    tools: r.tools_json ? JSON.parse(r.tools_json) : [],
+    permissions: r.permissions_json ? JSON.parse(r.permissions_json) : {},
+  }))
+
   const pages = Math.ceil(total / limit)
 
   const categoryLinks = (cats || []).map((c: any) =>
@@ -189,16 +209,53 @@ export async function browsePage(url: URL, env: { DB: D1Database }): Promise<Res
       ${page < pages ? `<a href="/?${new URLSearchParams({ ...(q ? { q } : {}), ...(category ? { category } : {}), page: String(page + 1) }).toString()}">Next &rarr;</a>` : '<span></span>'}
     </div>` : ''
 
+  const featuredSection = (!q && !category && featuredApps.length > 0) ? `
+    <section class="featured-section">
+      <div class="featured-header">
+        <h2>Featured Apps</h2>
+        <span class="featured-badge">Curated</span>
+      </div>
+      <div class="featured-grid">
+        ${featuredApps.map(app => `
+          <a href="/apps/${esc(app.id)}" class="featured-card">
+            <img class="featured-icon" src="${esc(app.icon_url)}" alt="${esc(app.name)}" loading="lazy" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 80 80%22><rect width=%2280%22 height=%2280%22 rx=%2216%22 fill=%22%2327272a%22/><text x=%2240%22 y=%2248%22 text-anchor=%22middle%22 font-size=%2232%22>📦</text></svg>'">
+            <div class="featured-info">
+              <div class="featured-name">${esc(app.name)} ${app.verified ? '<span class="verified-badge" title="Verified">✓</span>' : ''}</div>
+              <div class="featured-desc">${esc(app.description)}</div>
+              <div class="featured-meta">
+                ${app.rating_count > 0 ? `${stars(app.avg_rating)} ·` : ''}
+                ${formatCount(app.install_count)} installs
+              </div>
+            </div>
+          </a>
+        `).join('')}
+      </div>
+    </section>
+  ` : ''
+
+  const categoryChips = (cats || []).length > 0 ? `
+    <div class="category-chips">
+      <a href="/" class="chip ${!category ? 'active' : ''}">All</a>
+      ${(cats || []).map((c: any) => `
+        <a href="/?category=${esc(c.category)}" class="chip ${category === c.category ? 'active' : ''}">${esc(c.category)}</a>
+      `).join('')}
+    </div>
+  ` : ''
+
   const content = `
     <div class="hero">
-      <h1>Construct App Registry</h1>
-      <p>Discover apps for your AI-powered desktop</p>
+      <h1>Discover apps for your AI desktop</h1>
+      <p class="hero-subtitle">Browse ${total}+ apps and integrations for Construct</p>
       <form class="search-form" action="/" method="get">
         ${category ? `<input type="hidden" name="category" value="${esc(category)}">` : ''}
-        <input type="search" name="q" value="${esc(q)}" placeholder="Search apps..." autofocus>
-        <button type="submit">Search</button>
+        <div class="search-box">
+          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="search" name="q" value="${esc(q)}" placeholder="Search apps..." autocomplete="off">
+        </div>
       </form>
+      ${categoryChips}
     </div>
+    ${featuredSection}
     <div class="browse-layout">
       <aside class="sidebar">
         <h3>Categories</h3>
@@ -264,7 +321,7 @@ export async function appDetailPage(appId: string, env: { DB: D1Database }): Pro
 
   const toolsList = app.tools.length > 0 ? `
     <div class="detail-section">
-      <h3>Tools</h3>
+      <h3>Tools (${app.tools.length})</h3>
       <div class="tools-list">
         ${app.tools.map(t => `<div class="tool-item"><code>${esc(t.name)}</code><span>${esc(t.description)}</span></div>`).join('')}
       </div>
@@ -318,47 +375,85 @@ export async function appDetailPage(appId: string, env: { DB: D1Database }): Pro
     </div>` : ''
 
   const content = `
-    <div class="container">
-      <a href="/" class="back-link">&larr; Back to apps</a>
-      <div class="detail-header">
-        <img class="detail-icon" src="${esc(app.icon_url)}" alt="${esc(app.name)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 80 80%22><rect width=%2280%22 height=%2280%22 rx=%2216%22 fill=%22%2327272a%22/><text x=%2240%22 y=%2248%22 text-anchor=%22middle%22 font-size=%2232%22>📦</text></svg>'">
-        <div class="detail-title">
-          <h1>${esc(app.name)}</h1>
-          <p class="detail-author">by ${app.author.url ? `<a href="${esc(app.author.url)}">${esc(app.author.name)}</a>` : esc(app.author.name)} &middot; v${esc(app.latest_version)}</p>
-          <div class="detail-stats">
-            ${app.rating_count > 0 ? `${stars(app.avg_rating)} <span>(${app.rating_count})</span> <span class="meta-sep">&middot;</span>` : ''}
-            <span>${formatCount(app.install_count)} installs</span>
-            <span class="meta-sep">&middot;</span>
-            <a href="/?category=${esc(app.category)}">${esc(app.category)}</a>
-            ${app.has_ui ? '<span class="badge-ui">GUI</span>' : ''}
-            ${app.auth ? `<span class="badge-auth">${app.auth.oauth2 ? 'OAuth' : app.auth.apiKey ? 'API Key' : 'Auth'}</span>` : ''}
+    <div class="detail-layout">
+      <aside class="detail-sidebar">
+        <a href="/" class="back-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+          Back to apps
+        </a>
+        
+        <div class="sidebar-card">
+          <img class="sidebar-icon" src="${esc(app.icon_url)}" alt="${esc(app.name)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 80 80%22><rect width=%2280%22 height=%2280%22 rx=%2216%22 fill=%22%2327272a%22/><text x=%2240%22 y=%2248%22 text-anchor=%22middle%22 font-size=%2232%22>📦</text></svg>'">
+          <div class="sidebar-title">
+            <h1>${esc(app.name)} ${app.verified ? '<span class="verified-badge-lg" title="Verified">✓</span>' : ''}</h1>
+            <p class="sidebar-author">by ${app.author.url ? `<a href="${esc(app.author.url)}">${esc(app.author.name)}</a>` : esc(app.author.name)}</p>
           </div>
+          
+          <div class="sidebar-stats">
+            <div class="stat">
+              <span class="stat-value">${formatCount(app.install_count)}</span>
+              <span class="stat-label">installs</span>
+            </div>
+            ${app.rating_count > 0 ? `
+            <div class="stat">
+              <span class="stat-value">${app.avg_rating.toFixed(1)}</span>
+              <span class="stat-label">${stars(app.avg_rating)}</span>
+            </div>
+            ` : ''}
+          </div>
+          
+          <div class="sidebar-meta">
+            <div class="meta-row">
+              <span class="meta-label">Version</span>
+              <span class="meta-value">v${esc(app.latest_version)}</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">Category</span>
+              <a href="/?category=${esc(app.category)}" class="meta-value">${esc(app.category)}</a>
+            </div>
+            ${app.has_ui ? `
+            <div class="meta-row">
+              <span class="meta-label">Interface</span>
+              <span class="meta-value"><span class="badge-ui">GUI</span></span>
+            </div>
+            ` : ''}
+            ${app.auth ? `
+            <div class="meta-row">
+              <span class="meta-label">Auth</span>
+              <span class="meta-value"><span class="badge-auth">${app.auth.oauth2 ? 'OAuth' : app.auth.apiKey ? 'API Key' : 'Auth'}</span></span>
+            </div>
+            ` : ''}
+          </div>
+          
+          <a href="${esc(app.repo_url)}" class="btn-sidebar" target="_blank" rel="noopener">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 005.47 7.59c.4.07.55-.17.55-.38V14.3C3.73 14.77 3.26 13.43 3.26 13.43c-.36-.93-.88-1.17-.88-1.17-.72-.49.05-.48.05-.48.8.06 1.22.82 1.22.82.71 1.21 1.87.86 2.33.66.07-.51.28-.86.5-1.06-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 014 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            View Source
+          </a>
         </div>
-        <div class="detail-actions">
-          <a href="${esc(app.repo_url)}" class="btn-outline" target="_blank" rel="noopener">View Source</a>
+        
+        <div class="sidebar-card">
+          <h3 class="sidebar-section-title">Install</h3>
+          <p class="sidebar-text">Open the App Registry in your Construct desktop, search for <strong>${esc(app.name)}</strong>, and click Install.</p>
         </div>
-      </div>
+      </aside>
+      
+      <main class="detail-content">
+        <div class="detail-desc">
+          <p class="lead">${esc(app.description)}</p>
+          ${app.long_description ? `<p class="long-desc">${esc(app.long_description)}</p>` : ''}
+        </div>
 
-      <div class="detail-desc">
-        <p>${esc(app.description)}</p>
-        ${app.long_description ? `<p class="long-desc">${esc(app.long_description)}</p>` : ''}
-      </div>
+        ${screenshotsHtml}
+        ${toolsList}
+        ${permsList}
 
-      <div class="detail-install">
-        <h3>Install in Construct</h3>
-        <p>Open the App Registry in your Construct desktop, search for <strong>${esc(app.name)}</strong>, and click Install.</p>
-      </div>
+        <div class="detail-tags">
+          ${app.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+        </div>
 
-      ${screenshotsHtml}
-      ${toolsList}
-      ${permsList}
-
-      <div class="detail-tags">
-        ${app.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
-      </div>
-
-      ${versionsHtml}
-      ${reviewsHtml}
+        ${versionsHtml}
+        ${reviewsHtml}
+      </main>
     </div>`
 
   return html(layout(app.name, content))
@@ -905,28 +1000,91 @@ const CSS = `
   /* ── Hero ── */
   .hero {
     text-align: center;
-    padding: 48px 24px 32px;
+    padding: 56px 24px 32px;
+    background: linear-gradient(180deg, rgba(96,165,250,0.08) 0%, transparent 60%);
     border-bottom: 1px solid var(--border);
   }
-  .hero h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
-  .hero p { color: var(--text-muted); margin-bottom: 24px; font-size: 15px; }
-  .search-form {
-    display: flex; gap: 8px; max-width: 480px; margin: 0 auto;
+  .hero h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; background: linear-gradient(90deg, var(--text) 0%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .hero-subtitle { color: var(--text-muted); margin-bottom: 28px; font-size: 16px; }
+  .search-form { max-width: 520px; margin: 0 auto; }
+  .search-box {
+    position: relative; display: flex; align-items: center;
   }
-  .search-form input {
-    flex: 1; padding: 10px 16px;
-    border-radius: var(--radius); border: 1px solid var(--border-strong);
-    background: var(--surface-hover); color: var(--text);
-    font-size: 14px; font-family: var(--font); outline: none;
+  .search-icon {
+    position: absolute; left: 14px; color: var(--text-subtle); pointer-events: none;
   }
-  .search-form input:focus { border-color: var(--accent); }
-  .search-form input::placeholder { color: var(--text-subtle); }
-  .search-form button {
-    padding: 10px 20px; border-radius: var(--radius); border: none;
-    background: var(--accent); color: #fff; font-weight: 500;
-    cursor: pointer; font-family: var(--font); font-size: 14px;
+  .search-box input {
+    width: 100%; padding: 12px 16px 12px 42px;
+    border-radius: var(--radius-lg); border: 1px solid var(--border-strong);
+    background: var(--surface); color: var(--text);
+    font-size: 15px; font-family: var(--font); outline: none;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
   }
-  .search-form button:hover { background: var(--accent-hover); }
+  .search-box input:focus { 
+    border-color: var(--accent); 
+    background: var(--surface-hover);
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.15);
+  }
+  .search-box input::placeholder { color: var(--text-subtle); }
+
+  /* ── Category Chips ── */
+  .category-chips {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+    margin-top: 20px; max-width: 700px; margin-left: auto; margin-right: auto;
+  }
+  .chip {
+    padding: 6px 14px; border-radius: 9999px; font-size: 13px; font-weight: 500;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text-muted); transition: all 0.15s;
+  }
+  .chip:hover { 
+    background: var(--surface-hover); border-color: var(--border-strong); 
+    color: var(--text); text-decoration: none;
+  }
+  .chip.active { 
+    background: var(--accent-muted); border-color: rgba(96,165,250,0.3);
+    color: var(--accent);
+  }
+
+  /* ── Featured Section ── */
+  .featured-section {
+    max-width: 1100px; margin: 0 auto; padding: 32px 24px 0;
+  }
+  .featured-header {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+  }
+  .featured-header h2 { font-size: 18px; font-weight: 600; }
+  .featured-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 3px 8px; background: linear-gradient(90deg, #f59e0b, #d97706);
+    color: #fff; border-radius: 4px;
+  }
+  .featured-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px;
+  }
+  .featured-card {
+    display: flex; gap: 14px; padding: 16px;
+    background: linear-gradient(135deg, rgba(96,165,250,0.08) 0%, var(--surface) 50%);
+    border: 1px solid var(--border); border-radius: var(--radius-lg);
+    transition: all 0.15s; color: var(--text);
+  }
+  .featured-card:hover { 
+    background: linear-gradient(135deg, rgba(96,165,250,0.12) 0%, var(--surface-hover) 50%);
+    border-color: rgba(96,165,250,0.25); transform: translateY(-1px);
+    text-decoration: none;
+  }
+  .featured-icon { width: 48px; height: 48px; border-radius: var(--radius); flex-shrink: 0; object-fit: cover; background: var(--bg-subtle); }
+  .featured-info { min-width: 0; flex: 1; }
+  .featured-name { font-weight: 600; font-size: 14px; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+  .verified-badge { 
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; background: var(--accent); color: #fff;
+    border-radius: 50%; font-size: 8px; font-weight: 700;
+  }
+  .featured-desc { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; }
+  .featured-meta { font-size: 11px; color: var(--text-subtle); display: flex; align-items: center; gap: 6px; }
 
   /* ── Browse layout ── */
   .browse-layout {
@@ -984,18 +1142,71 @@ const CSS = `
   .page-info { color: var(--text-subtle); }
 
   /* ── Detail page ── */
+  .detail-layout {
+    max-width: 1100px; margin: 0 auto; padding: 24px;
+    display: grid; grid-template-columns: 280px 1fr; gap: 32px;
+  }
+  @media (max-width: 768px) {
+    .detail-layout { grid-template-columns: 1fr; }
+  }
+  
+  .detail-sidebar {
+    position: sticky; top: 76px; height: fit-content;
+  }
+  .back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--text-muted); margin-bottom: 16px;
+    transition: color 0.15s;
+  }
+  .back-link:hover { color: var(--text); text-decoration: none; }
+  
+  .sidebar-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 20px; margin-bottom: 16px;
+  }
+  .sidebar-icon { width: 64px; height: 64px; border-radius: var(--radius-lg); margin-bottom: 12px; background: var(--bg-subtle); }
+  .sidebar-title h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .verified-badge-lg { 
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; background: var(--accent); color: #fff;
+    border-radius: 50%; font-size: 10px; font-weight: 700;
+  }
+  .sidebar-author { font-size: 13px; color: var(--text-muted); }
+  .sidebar-author a { color: var(--accent); }
+  
+  .sidebar-stats {
+    display: flex; gap: 16px; margin: 16px 0; padding: 16px 0;
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  }
+  .stat { text-align: center; }
+  .stat-value { display: block; font-size: 20px; font-weight: 700; color: var(--text); }
+  .stat-label { display: block; font-size: 11px; color: var(--text-subtle); margin-top: 2px; }
+  
+  .sidebar-meta { margin-bottom: 16px; }
+  .meta-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 13px; }
+  .meta-label { color: var(--text-subtle); }
+  .meta-value { color: var(--text-muted); }
+  .meta-value a { color: var(--accent); }
+  
+  .btn-sidebar {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 10px; border-radius: var(--radius);
+    background: var(--surface-hover); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px; font-weight: 500;
+    transition: all 0.15s;
+  }
+  .btn-sidebar:hover { background: var(--surface-raised); border-color: var(--border-strong); text-decoration: none; }
+  
+  .sidebar-section-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+  .sidebar-text { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+  .sidebar-text strong { color: var(--text); }
+  
+  .detail-content { min-width: 0; }
+  .detail-desc { margin-bottom: 28px; }
+  .detail-desc .lead { font-size: 16px; color: var(--text); line-height: 1.6; margin-bottom: 12px; }
+  .long-desc { font-size: 14px; color: var(--text-muted); line-height: 1.7; }
+
   .container { max-width: 800px; margin: 0 auto; padding: 32px 24px; }
-  .back-link { font-size: 13px; color: var(--text-muted); display: inline-block; margin-bottom: 24px; }
-  .back-link:hover { color: var(--text); }
-
-  .detail-header { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 24px; }
-  .detail-icon { width: 80px; height: 80px; border-radius: var(--radius-lg); flex-shrink: 0; object-fit: cover; background: var(--bg-subtle); }
-  .detail-title { flex: 1; min-width: 0; }
-  .detail-title h1 { font-size: 24px; font-weight: 700; margin-bottom: 2px; }
-  .detail-author { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
-  .detail-stats { font-size: 12px; color: var(--text-subtle); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .detail-actions { flex-shrink: 0; display: flex; gap: 8px; }
-
   .btn-outline {
     padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500;
     border: 1px solid var(--border-strong); color: var(--text-muted); background: var(--surface-hover);
@@ -1007,18 +1218,6 @@ const CSS = `
     background: var(--accent); color: #fff; transition: background 0.15s;
   }
   .btn-primary:hover { background: var(--accent-hover); text-decoration: none; }
-
-  .detail-desc { margin-bottom: 24px; }
-  .detail-desc p { color: var(--text-muted); line-height: 1.6; }
-  .long-desc { margin-top: 8px; }
-
-  .detail-install {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-    padding: 20px; margin-bottom: 24px;
-  }
-  .detail-install h3 { font-size: 14px; margin-bottom: 8px; }
-  .detail-install p { font-size: 13px; color: var(--text-muted); }
-  .alt-install { margin-top: 12px; font-size: 12px !important; color: var(--text-subtle) !important; }
 
   pre {
     background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius);

@@ -401,11 +401,20 @@ function escapeHtml(str: string): string {
 }
 
 function layout(title: string, body: string, session?: DevSession | null): string {
-  const header = session
-    ? `<div class="user"><span>@${escapeHtml(session.githubLogin)}</span>
-         <form action="/dev/logout" method="post" style="display:inline">
-           <button class="btn-ghost">Log out</button>
-         </form></div>`
+  const userMenu = session
+    ? `<div class="user-menu">
+         <button class="user-trigger" onclick="this.parentElement.classList.toggle('open')">
+           <img src="https://github.com/${escapeHtml(session.githubLogin)}.png?size=32" alt="" class="user-avatar" onerror="this.style.display='none'">
+           <span>@${escapeHtml(session.githubLogin)}</span>
+           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+         </button>
+         <div class="user-dropdown">
+           <a href="/dev/dashboard">Dashboard</a>
+           <form action="/dev/logout" method="post">
+             <button type="submit">Sign out</button>
+           </form>
+         </div>
+       </div>`
     : '';
   return `<!doctype html>
 <html lang="en"><head>
@@ -413,62 +422,125 @@ function layout(title: string, body: string, session?: DevSession | null): strin
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(title)} · Construct Developer</title>
 <style>
-:root{--bg:#0a0a12;--fg:#e4e4ed;--muted:rgba(228,228,237,0.6);--faint:rgba(228,228,237,0.35);--surface:rgba(255,255,255,0.04);--surface-hover:rgba(255,255,255,0.07);--border:rgba(255,255,255,0.09);--accent:#6366f1;--danger:#ef4444;--ok:#10b981}
+:root{--bg:#0a0a12;--bg-subtle:#18181b;--fg:#e4e4ed;--muted:rgba(228,228,237,0.6);--faint:rgba(228,228,237,0.35);--surface:rgba(255,255,255,0.04);--surface-hover:rgba(255,255,255,0.07);--surface-raised:rgba(255,255,255,0.08);--border:rgba(255,255,255,0.09);--border-strong:rgba(255,255,255,0.18);--accent:#60A5FA;--accent-hover:#93C5FD;--accent-muted:rgba(96,165,250,0.12);--danger:#ef4444;--ok:#10b981;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;--radius:8px;--radius-sm:6px;--radius-lg:12px}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;min-height:100vh}
-.container{max-width:780px;margin:0 auto;padding:32px 20px 96px}
-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:32px}
-header a{color:var(--fg);text-decoration:none;font-weight:600;font-size:15px}
-header .user{display:flex;gap:12px;align-items:center;font-size:13px;color:var(--muted)}
-h1{font-size:22px;font-weight:700;margin-bottom:4px}
-h2{font-size:15px;font-weight:600;margin-top:32px;margin-bottom:12px;color:var(--fg)}
-p.lede{color:var(--muted);font-size:13px;line-height:1.55;margin-bottom:24px}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px}
-.card + .card{margin-top:10px}
-.app-row{display:flex;gap:14px;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-decoration:none;color:var(--fg);transition:background 0.15s}
-.app-row + .app-row{margin-top:8px}
-.app-row:hover{background:var(--surface-hover)}
-.app-row img{width:36px;height:36px;border-radius:8px;background:#222}
-.app-row .meta{flex:1;min-width:0}
-.app-row .name{font-weight:600;font-size:14px}
-.app-row .sub{font-size:12px;color:var(--faint);margin-top:2px}
-.app-row .count{font-size:12px;color:var(--muted);background:var(--surface-hover);border:1px solid var(--border);padding:3px 8px;border-radius:999px}
-.empty{text-align:center;padding:48px 20px;color:var(--muted);border:1px dashed var(--border);border-radius:12px}
-.login-card{max-width:380px;margin:80px auto;text-align:center;padding:32px 28px;background:var(--surface);border:1px solid var(--border);border-radius:14px}
-.login-card h1{margin-bottom:8px}
-.login-card p{color:var(--muted);font-size:13px;margin-bottom:24px;line-height:1.5}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;border:none;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:filter 0.15s}
-.btn:hover{filter:brightness(1.1)}
+body{font-family:var(--font);background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;min-height:100vh}
+.container{max-width:1000px;margin:0 auto;padding:32px 24px 96px}
+
+/* Nav */
+nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:40px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+nav a.logo{color:var(--fg);text-decoration:none;font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px}
+nav a.logo:hover{color:var(--accent)}
+
+/* User Menu */
+.user-menu{position:relative}
+.user-trigger{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--fg);font-size:13px;cursor:pointer;transition:all .15s}
+.user-trigger:hover{background:var(--surface-hover);border-color:var(--border-strong)}
+.user-avatar{width:24px;height:24px;border-radius:50%;background:var(--bg-subtle)}
+.user-dropdown{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:6px;min-width:140px;opacity:0;visibility:hidden;transform:translateY(-4px);transition:all .15s;z-index:100}
+.user-menu.open .user-dropdown{opacity:1;visibility:visible;transform:translateY(0)}
+.user-dropdown a,.user-dropdown button{display:block;width:100%;padding:8px 12px;border-radius:var(--radius-sm);font-size:13px;color:var(--fg);text-decoration:none;background:transparent;border:none;text-align:left;cursor:pointer}
+.user-dropdown a:hover,.user-dropdown button:hover{background:var(--surface-hover)}
+.user-dropdown form{margin:0;padding:0}
+.user-dropdown button{color:var(--danger)}
+
+/* Typography */
+h1{font-size:24px;font-weight:700;margin-bottom:6px}
+h2{font-size:18px;font-weight:600;margin:32px 0 16px;color:var(--fg)}
+p.lede{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:28px}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
+.card+.card{margin-top:12px}
+
+/* App Cards Grid */
+.apps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:24px}
+.app-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;transition:all .15s;display:flex;flex-direction:column}
+.app-card:hover{background:var(--surface-hover);border-color:var(--border-strong);transform:translateY(-2px)}
+.app-card-header{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.app-card-icon{width:48px;height:48px;border-radius:var(--radius);object-fit:cover;background:var(--bg-subtle)}
+.app-card-title{flex:1;min-width:0}
+.app-card-title h3{font-size:15px;font-weight:600;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-card-title .repo{font-size:12px;color:var(--faint)}
+.app-card-meta{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.badge{font-size:11px;padding:3px 10px;border-radius:999px;background:var(--surface-raised);color:var(--muted)}
+.badge-accent{background:var(--accent-muted);color:var(--accent)}
+.app-card-footer{margin-top:auto;display:flex;gap:8px}
+
+/* Empty State */
+.empty{text-align:center;padding:64px 24px;color:var(--muted);border:2px dashed var(--border);border-radius:var(--radius-lg)}
+.empty-icon{font-size:48px;margin-bottom:16px;opacity:.5}
+.empty h3{font-size:16px;font-weight:600;margin-bottom:8px;color:var(--fg)}
+.empty p{font-size:14px;margin-bottom:20px}
+
+/* Login Card */
+.login-card{max-width:400px;margin:80px auto;text-align:center;padding:40px 32px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)}
+.login-card h1{margin-bottom:8px;font-size:22px}
+.login-card p{color:var(--muted);font-size:14px;margin-bottom:28px;line-height:1.6}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:var(--radius);background:var(--accent);color:#fff;text-decoration:none;border:none;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.btn-secondary{background:var(--surface-hover);border:1px solid var(--border);color:var(--fg)}
+.btn-secondary:hover{background:var(--surface-raised)}
 .btn-gh{background:#24292f}
-.btn-danger{background:transparent;color:var(--danger);border:1px solid rgba(239,68,68,0.3)}
-.btn-danger:hover{background:rgba(239,68,68,0.1)}
-.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:6px;font-size:12px;cursor:pointer}
-.btn-ghost:hover{color:var(--fg);background:var(--surface-hover)}
-form.inline{display:flex;gap:8px;align-items:center}
-label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:500}
-input[type=text],input[type=password],textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--fg);font-family:"SF Mono",Menlo,monospace;font-size:12.5px;outline:none}
-input:focus,textarea:focus{border-color:var(--accent)}
-textarea{min-height:80px;resize:vertical}
-.row{display:grid;grid-template-columns:220px 1fr auto;gap:10px;align-items:start;padding:12px 0;border-bottom:1px solid var(--border)}
-.row:last-child{border-bottom:none}
-.row .key{font-family:"SF Mono",Menlo,monospace;font-size:13px;font-weight:600;word-break:break-all}
-.row .val{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--faint);letter-spacing:0.5px}
-.row .when{font-size:11px;color:var(--faint);margin-top:2px}
-.flash{padding:10px 14px;border-radius:8px;margin-bottom:18px;font-size:13px;border:1px solid transparent}
+.btn-sm{padding:6px 12px;font-size:12px}
+
+/* App Detail Layout */
+.app-layout{display:grid;grid-template-columns:1fr 320px;gap:24px}
+@media(max-width:768px){.app-layout{grid-template-columns:1fr}}
+.main-content{min-width:0}
+.sidebar{position:sticky;top:24px;height:fit-content}
+.sidebar-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
+.sidebar-section h3{font-size:13px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+
+/* Env Vars */
+.env-list{display:flex;flex-direction:column;gap:8px}
+.env-item{display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface-raised);border-radius:var(--radius);border:1px solid var(--border)}
+.env-key{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);min-width:120px}
+.env-meta{flex:1;font-size:12px;color:var(--faint)}
+.env-actions{display:flex;gap:6px}
+
+/* Forms */
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:500}
+.form-row{display:flex;gap:10px;align-items:flex-start}
+input[type=text],input[type=password]{flex:1;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--fg);font-family:var(--mono);font-size:13px;outline:none}
+input:focus{border-color:var(--accent)}
+
+/* Flash */
+.flash{padding:12px 16px;border-radius:var(--radius);margin-bottom:20px;font-size:13px;border:1px solid transparent}
 .flash-ok{background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.25);color:var(--ok)}
 .flash-error{background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.3);color:var(--danger)}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media (max-width:640px){.row{grid-template-columns:1fr}.row .when{margin-top:0}.grid{grid-template-columns:1fr}}
-code{font-family:"SF Mono",Menlo,monospace;background:var(--surface-hover);padding:1px 5px;border-radius:4px;font-size:12px}
-.notice{background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.22);border-radius:8px;padding:10px 14px;font-size:12.5px;color:var(--muted);line-height:1.55;margin-bottom:20px}
-.notice strong{color:var(--fg)}
+
+/* Code */
+code{font-family:var(--mono);background:var(--surface-hover);padding:2px 6px;border-radius:4px;font-size:12px}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:999px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.15)}
+
+@media(max-width:640px){
+  .container{padding:20px 16px 64px}
+  h1{font-size:20px}
+  .apps-grid{grid-template-columns:1fr}
+  .app-layout{grid-template-columns:1fr}
+  .sidebar{position:static}
+  .form-row{flex-direction:column}
+  .env-item{flex-direction:column;align-items:flex-start;gap:8px}
+}
 </style>
 </head><body>
 <div class="container">
-<header>
-  <a href="/dev/dashboard">Construct · Developer</a>
-  ${header}
-</header>
+<nav>
+  <a href="/dev/dashboard" class="logo">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+    Developer Portal
+  </a>
+  ${userMenu}
+</nav>
 ${body}
 </div>
 </body></html>`;
@@ -492,32 +564,44 @@ function renderLogin(): string {
 }
 
 function renderDashboard(session: DevSession, apps: OwnedApp[]): string {
-  const rows = apps.length
+  const appCards = apps.length
     ? apps
         .map(
           (a) => `
-<a class="app-row" href="/dev/apps/${escapeHtml(a.id)}">
-  <img src="${escapeHtml(a.icon_url || '')}" alt="" onerror="this.style.visibility='hidden'">
-  <div class="meta">
-    <div class="name">${escapeHtml(a.name)}</div>
-    <div class="sub">${escapeHtml(a.id)} · ${escapeHtml(a.repo_owner)}/${escapeHtml(a.repo_name)}</div>
+<a href="/dev/apps/${escapeHtml(a.id)}" class="app-card">
+  <div class="app-card-header">
+    <img class="app-card-icon" src="${escapeHtml(a.icon_url || '')}" alt="" onerror="this.style.display='none'">
+    <div class="app-card-title">
+      <h3>${escapeHtml(a.name)}</h3>
+      <div class="repo">${escapeHtml(a.repo_owner)}/${escapeHtml(a.repo_name)}</div>
+    </div>
   </div>
-  <span class="count">${a.var_count} vars</span>
+  <div class="app-card-meta">
+    <span class="badge badge-accent">${a.var_count} env var${a.var_count !== 1 ? 's' : ''}</span>
+  </div>
+  <div class="app-card-footer">
+    <span class="btn btn-sm btn-secondary">Manage</span>
+  </div>
 </a>`,
         )
         .join('')
+    : '';
+
+  const content = apps.length
+    ? `<div class="apps-grid">${appCards}</div>`
     : `<div class="empty">
-         No apps yet. Add your GitHub login to <code>owners[]</code> in an app's <code>manifest.json</code>,
-         open a PR to the <a href="https://github.com/construct-computer/app-registry" style="color:var(--accent)">app registry</a>,
-         and this list will populate after merge.
+         <div class="empty-icon">📦</div>
+         <h3>No apps found</h3>
+         <p>You don't own any apps on the Construct registry yet.</p>
+         <a href="/publish" class="btn">Learn how to publish an app</a>
        </div>`;
 
   return layout(
-    'Your apps',
+    'Dashboard',
     `
-<h1>Your apps</h1>
-<p class="lede">Apps where <code>@${escapeHtml(session.githubLogin)}</code> is listed in <code>owners[]</code>.</p>
-${rows}
+<h1>Developer Dashboard</h1>
+<p class="lede">Manage environment variables for your Construct apps.</p>
+${content}
 `,
     session,
   );
@@ -531,61 +615,64 @@ function renderAppPage(
   // Flash banner is injected later by injectFlashFromQuery based on ?ok=/?error=
   const flashPlaceholder = '<!--FLASH-->';
 
-  const rows = vars.length
+  const envList = vars.length
     ? vars
         .map(
           (v) => `
-<div class="row">
-  <div>
-    <div class="key">${escapeHtml(v.name)}</div>
-    <div class="when">updated ${new Date(v.updated_at).toISOString().slice(0, 10)} by @${escapeHtml(v.updated_by)}</div>
+<div class="env-item">
+  <span class="env-key">${escapeHtml(v.name)}</span>
+  <span class="env-meta">${new Date(v.updated_at).toISOString().slice(0, 10)} by @${escapeHtml(v.updated_by)}</span>
+  <div class="env-actions">
+    <form method="post" action="/dev/apps/${escapeHtml(app.id)}/env/delete" onsubmit="return confirm('Delete ${escapeHtml(v.name)}?')">
+      <input type="hidden" name="name" value="${escapeHtml(v.name)}">
+      <button class="btn btn-sm" style="background:transparent;border:1px solid rgba(239,68,68,0.3);color:var(--danger)">Delete</button>
+    </form>
   </div>
-  <div class="val">••••••••••••</div>
-  <form method="post" action="/dev/apps/${escapeHtml(app.id)}/env/delete" onsubmit="return confirm('Delete ${escapeHtml(v.name)}?')">
-    <input type="hidden" name="name" value="${escapeHtml(v.name)}">
-    <button class="btn-danger">Delete</button>
-  </form>
 </div>`,
         )
         .join('')
-    : `<div class="empty" style="padding:24px">No env vars yet.</div>`;
-
+    : `<div class="empty" style="padding:32px 24px"><p>No environment variables configured.</p></div>`;
+  
   return layout(
     app.name,
     `
 ${flashPlaceholder}
-<h1>${escapeHtml(app.name)}</h1>
-<p class="lede"><code>${escapeHtml(app.id)}</code> · <a href="https://github.com/${escapeHtml(app.repo_owner)}/${escapeHtml(app.repo_name)}" style="color:var(--accent)">repo</a></p>
-
-<div class="notice">
-<strong>How your app reads these.</strong> At dispatch time, Construct decrypts <em>only this app's</em> env vars
-and injects them as the <code>x-construct-env</code> header (base64-encoded JSON). Your handler parses
-<code>ctx.request.headers.get('x-construct-env')</code>. Values are never loaded into the shared Worker
-<code>env</code> binding — other apps in the same bundle can't read them.
-</div>
-
-<h2>Environment variables</h2>
-${rows}
-
-<h2>Add or update a variable</h2>
-<div class="card">
-  <form method="post" action="/dev/apps/${escapeHtml(app.id)}/env" class="grid">
-    <div>
-      <label for="name">Name</label>
-      <input id="name" name="name" type="text" placeholder="MY_API_KEY" autocomplete="off" required maxlength="64">
+<div class="app-layout">
+  <main class="main-content">
+    <h1>${escapeHtml(app.name)}</h1>
+    <p class="lede">${escapeHtml(app.repo_owner)}/${escapeHtml(app.repo_name)}</p>
+    
+    <h2>Environment Variables</h2>
+    <div class="env-list">
+      ${envList}
     </div>
-    <div>
-      <label for="value">Value</label>
-      <input id="value" name="value" type="password" placeholder="••••••" autocomplete="off" required maxlength="8192">
+  </main>
+  
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <h3>Add Environment Variable</h3>
+      <form method="post" action="/dev/apps/${escapeHtml(app.id)}/env">
+        <div class="form-group">
+          <label for="name">Variable name</label>
+          <input type="text" id="name" name="name" placeholder="API_KEY" required pattern="[A-Z][A-Z0-9_]*" title="Must start with uppercase letter, contain only A-Z, 0-9, and underscores">
+        </div>
+        <div class="form-group">
+          <label for="value">Value</label>
+          <input type="password" id="value" name="value" placeholder="secret-value" required>
+        </div>
+        <button type="submit" class="btn" style="width:100%">Add Variable</button>
+      </form>
     </div>
-    <div style="grid-column:1/-1;text-align:right">
-      <button class="btn" type="submit">Save</button>
+    
+    <div class="sidebar-section">
+      <h3>About</h3>
+      <p style="font-size:12px;color:var(--muted);line-height:1.6">
+        Environment variables are encrypted and only available to your app at runtime. 
+        Values are never displayed after creation.
+      </p>
     </div>
-  </form>
-</div>
-
-<p class="lede" style="margin-top:32px">Names must match <code>^[A-Z][A-Z0-9_]{0,63}$</code>. Reserved prefixes: <code>CF_</code>, <code>CLOUDFLARE_</code>, <code>CONSTRUCT_</code>.</p>
-`,
+  </aside>
+</div>`,
     session,
   );
 }
