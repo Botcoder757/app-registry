@@ -425,9 +425,9 @@ function renderDashboard(session: DevSession, apps: OwnedApp[]): string {
     ? apps
         .map(
           (a) => `
-<a href="/dev/apps/${escapeHtml(a.id)}" class="app-card">
+<a href="/dev/apps/${escapeHtml(a.id)}" class="app-card" style="display:flex; flex-direction:column; padding:24px; background:var(--surface); border:1px solid var(--border); transition:all 0.3s; gap:0;">
   <div class="app-card-header">
-    <img class="app-card-icon" src="${escapeHtml(a.icon_url || '')}" alt="" onerror="this.style.display='none'">
+    <img class="app-icon" src="${escapeHtml(a.icon_url || '')}" alt="" onerror="this.style.display='none'">
     <div class="app-card-title">
       <h3>${escapeHtml(a.name)}</h3>
       <div class="repo">${escapeHtml(a.repo_owner)}/${escapeHtml(a.repo_name)}</div>
@@ -437,7 +437,7 @@ function renderDashboard(session: DevSession, apps: OwnedApp[]): string {
     <span class="badge badge-accent">${a.var_count} env var${a.var_count !== 1 ? 's' : ''}</span>
   </div>
   <div class="app-card-footer">
-    <span class="btn btn-sm btn-secondary">Manage</span>
+    <span class="btn btn-sm btn-outline" style="width:100%;">Manage app</span>
   </div>
 </a>`,
         )

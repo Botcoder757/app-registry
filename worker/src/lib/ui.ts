@@ -481,13 +481,13 @@ export const CSS = `
   h2 { font-size: 20px; font-weight: 700; margin: 40px 0 20px; color: var(--text); }
   p.lede { color: var(--text-secondary); font-size: 16px; line-height: 1.6; margin-bottom: 32px; }
   
-  .apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 32px; }
-  .app-card-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
-  .app-card-title { flex: 1; min-width: 0; }
+  .apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; margin-top: 32px; }
+  .app-card-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .app-card-title { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
   .app-card-title h3 { font-size: 18px; font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
-  .app-card-title .repo { font-size: 13px; color: var(--text-secondary); }
-  .app-card-meta { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
-  .badge { font-size: 12px; padding: 4px 12px; border-radius: 999px; background: var(--surface-hover); color: var(--text); font-weight: 500; }
+  .app-card-title .repo { font-size: 14px; color: var(--text-secondary); }
+  .app-card-meta { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .badge { font-size: 12px; padding: 4px 12px; border-radius: 9999px; background: var(--surface-hover); color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
   .badge-accent { background: var(--accent-muted); color: var(--accent); }
   .app-card-footer { margin-top: auto; display: flex; gap: 10px; }
   
