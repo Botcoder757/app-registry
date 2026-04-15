@@ -14,7 +14,7 @@ Everything you need to build, test, and publish apps for [Construct](https://con
 6. [Using the App SDK](#using-the-app-sdk)
 7. [Adding a Visual UI](#adding-a-visual-ui)
 8. [Construct Browser SDK](#construct-browser-sdk)
-9. [Authentication (OAuth2)](#authentication-oauth2)
+9. [Authentication (OAuth2, API Key, Bearer, Basic)](#authentication)
 10. [Testing Locally](#testing-locally)
 11. [Publishing to the Registry](#publishing-to-the-registry)
 12. [Updating Your App](#updating-your-app)
@@ -174,11 +174,23 @@ The manifest declares your app's metadata. It's validated against the [JSON Sche
     "height": 600
   },
   "auth": {
-    "oauth2": {
-      "authorization_url": "https://api.example.com/oauth/authorize",
-      "token_url": "https://api.example.com/oauth/token",
-      "scopes": ["read", "write"]
-    }
+    "schemes": [
+      {
+        "type": "oauth2",
+        "label": "Sign in with Example",
+        "authorization_url": "https://api.example.com/oauth/authorize",
+        "token_url": "https://api.example.com/oauth/token",
+        "scopes": ["read", "write"]
+      },
+      {
+        "type": "api_key",
+        "label": "Use API Key",
+        "instructions": "Get your key at https://api.example.com/settings/keys",
+        "fields": [
+          { "name": "api_key", "displayName": "API Key", "type": "password", "required": true }
+        ]
+      }
+    ]
   },
   "permissions": {
     "network": ["api.example.com"],
@@ -205,8 +217,8 @@ The manifest declares your app's metadata. It's validated against the [JSON Sche
 | `ui.entry` | string | No | Entry point relative to repo root. Default: `ui/index.html`. |
 | `ui.width` | integer | No | Default window width. Default: 800, range: 200–2000. |
 | `ui.height` | integer | No | Default window height. Default: 600, range: 200–2000. |
-| `auth` | object | No | Authentication configuration. |
-| `auth.oauth2` | object | No | OAuth2 config with `authorization_url`, `token_url`, and optional `scopes`. |
+| `auth` | object | No | Authentication configuration — see [Authentication](#authentication). |
+| `auth.schemes` | array | No | Array of supported auth schemes. The user picks one when connecting. |
 | `permissions` | object | No | Declared permissions shown to users during install. |
 | `permissions.network` | string[] | No | External domains this app connects to. |
 | `permissions.storage` | string | No | Maximum storage needed (e.g., `"1MB"`). |
@@ -634,25 +646,98 @@ Type definitions for the full SDK (including `state` and `agent` namespaces) are
 
 ---
 
-## Authentication (OAuth2)
+## Authentication
 
-If your app connects to an external API that requires user authentication, use the OAuth2 flow:
+Construct supports four auth schemes for apps. You can declare any combination — users pick the scheme they prefer when connecting.
 
-### 1. Declare auth in your manifest
+### Supported schemes
+
+| Type | Use when |
+|------|----------|
+| `oauth2` | The provider supports standard OAuth 2.0 (authorization code flow). |
+| `api_key` | Users have a long-lived API key. |
+| `bearer` | Users paste a bearer/access token directly. |
+| `basic` | HTTP Basic auth (username + password). |
+
+### 1. Declare `auth.schemes` in your manifest
+
+Each scheme entry has a `type`, a `label` shown in the UI, and type-specific fields.
 
 ```json
 {
   "auth": {
-    "oauth2": {
-      "authorization_url": "https://api.example.com/oauth/authorize",
-      "token_url": "https://api.example.com/oauth/token",
-      "scopes": ["read", "write"]
-    }
+    "schemes": [
+      {
+        "type": "oauth2",
+        "label": "Sign in with Example",
+        "authorization_url": "https://api.example.com/oauth/authorize",
+        "token_url": "https://api.example.com/oauth/token",
+        "scopes": ["read", "write"],
+        "scope_separator": " "
+      },
+      {
+        "type": "api_key",
+        "label": "Use API Key",
+        "instructions": "Get your key at https://api.example.com/settings/keys",
+        "fields": [
+          { "name": "api_key", "displayName": "API Key", "type": "password", "required": true, "placeholder": "sk-..." }
+        ]
+      },
+      {
+        "type": "bearer",
+        "label": "Use Bearer Token",
+        "fields": [
+          { "name": "token", "displayName": "Access Token", "type": "password", "required": true }
+        ]
+      },
+      {
+        "type": "basic",
+        "label": "Use Username and Password",
+        "fields": [
+          { "name": "username", "displayName": "Username", "type": "text", "required": true },
+          { "name": "password", "displayName": "Password", "type": "password", "required": true }
+        ]
+      }
+    ]
   }
 }
 ```
 
-### 2. Use `requireAuth` in your tool handlers
+Field reference for a credential scheme (`api_key` / `bearer` / `basic`):
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Key under which the value is delivered to your server via `ctx.auth[name]`. |
+| `displayName` | Yes | Label shown to users. |
+| `type` | Yes | `text` or `password`. |
+| `required` | Yes | Whether the user must fill this in. |
+| `placeholder` | No | Hint text. |
+| `description` | No | Help text below the field. |
+
+> **Legacy format still supported:** `{ "auth": { "oauth2": { ... } } }` is normalized into a single-scheme `schemes[]` automatically. New apps should use `schemes[]`.
+
+### 2. OAuth2 client secrets (platform-side)
+
+OAuth requires a `client_id` + `client_secret` issued by the provider. These are **not** stored in your public manifest. Instead, the Construct platform holds them as Cloudflare Worker secrets, keyed by app id:
+
+```
+APP_OAUTH_<APP_ID_UPPER_UNDERSCORE>_CLIENT_ID
+APP_OAUTH_<APP_ID_UPPER_UNDERSCORE>_CLIENT_SECRET
+```
+
+For an app with id `mercadolibre` these become `APP_OAUTH_MERCADOLIBRE_CLIENT_ID` and `APP_OAUTH_MERCADOLIBRE_CLIENT_SECRET`.
+
+**To enable OAuth for your app:**
+
+1. Register a developer app with the provider (e.g. Google Cloud Console, MercadoLibre DevCenter).
+2. Set the OAuth redirect/callback URL to:
+   - Staging: `https://staging.construct.computer/api/apps/connect/callback`
+   - Production: `https://beta.construct.computer/api/apps/connect/callback`
+3. Open an issue on [construct-computer/app-registry](https://github.com/construct-computer/app-registry/issues) requesting OAuth credentials be added for your app id. A maintainer will add the secrets via `wrangler secret put`.
+
+Until those secrets are set, OAuth connect attempts will return `oauth_not_configured` — users can still connect with any credential-based scheme you've declared.
+
+### 3. Use `requireAuth` in your tool handlers
 
 ```typescript
 import { ConstructApp, requireAuth, RequestContext } from '@construct-computer/app-sdk';
@@ -662,9 +747,15 @@ app.tool('get_my_account', {
   handler: async (args, ctx) => {
     requireAuth(ctx); // throws if not authenticated
 
-    // ctx.auth is now guaranteed to have access_token
+    // ctx.auth contains the fields from whichever scheme the user chose.
+    // For OAuth: ctx.auth.access_token, ctx.auth.refresh_token, ctx.auth.expires_at
+    // For api_key scheme with a field named "api_key": ctx.auth.api_key
+    // For bearer scheme with a field named "token": ctx.auth.token
+    // For basic: ctx.auth.username, ctx.auth.password
+    // ctx.auth.type tells you which scheme was used: 'oauth2' | 'api_key' | 'bearer' | 'basic'
+    const token = ctx.auth.access_token || ctx.auth.api_key || ctx.auth.token;
     const response = await fetch('https://api.example.com/me', {
-      headers: { Authorization: `Bearer ${ctx.auth.access_token}` },
+      headers: { Authorization: `Bearer ${token}` },
     });
     const data = await response.json();
     return JSON.stringify(data, null, 2);
@@ -672,16 +763,18 @@ app.tool('get_my_account', {
 });
 ```
 
+**Tip:** Name your `api_key` / `bearer` field `access_token` to let a single `ctx.auth.access_token` handler work for both OAuth and token-paste flows.
+
 ### How it works
 
-1. The user connects their account in the Construct settings
-2. Construct stores the OAuth access token
-3. When the agent calls your tool, Construct injects the `x-construct-auth` header:
+1. The user picks a scheme and connects their account.
+2. For OAuth2 → Construct redirects to the provider, exchanges the code for tokens, and stores them encrypted (AES-256-GCM).
+3. For credential schemes → Construct stores the submitted fields encrypted.
+4. On every tool call, Construct auto-refreshes expired OAuth tokens, then injects the `x-construct-auth` header:
    ```
-   x-construct-auth: {"access_token":"...","user_id":"..."}
+   x-construct-auth: {"type":"oauth2","access_token":"...","refresh_token":"...","expires_at":1712345678000}
    ```
-4. The SDK parses this into `ctx.auth` and sets `ctx.isAuthenticated = true`
-5. Use `requireAuth(ctx)` to guard tools that need authentication
+5. The SDK parses this into `ctx.auth` and sets `ctx.isAuthenticated = true`.
 
 ### Public vs Authenticated Tools
 
