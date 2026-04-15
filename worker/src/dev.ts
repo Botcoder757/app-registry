@@ -141,14 +141,23 @@ async function logout(request: Request, env: DevEnv): Promise<Response> {
   if (!isSameOrigin(request)) return textResponse('Forbidden', 403);
   const session = await readSession(env, request);
   if (session) await destroySession(env, session.id);
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: '/dev/login',
-      'Set-Cookie': buildClearCookieHeader(SESSION_COOKIE),
-      'Cache-Control': 'no-store',
+  // Return HTML page with JS redirect instead of 302 — ensures the
+  // Set-Cookie header is processed by the browser before navigation.
+  return new Response(
+    `<!doctype html><html><head><meta charset="utf-8"><title>Logged out</title></head>` +
+    `<body style="background:#0a0a12;color:#e4e4ed;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">` +
+    `<p>Signing out…</p>` +
+    `<script>setTimeout(function(){window.location.href='/dev/login';},300);</script>` +
+    `</body></html>`,
+    {
+      status: 200,
+      headers: {
+        'Set-Cookie': buildClearCookieHeader(SESSION_COOKIE),
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
     },
-  });
+  );
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
