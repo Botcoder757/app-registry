@@ -37,7 +37,7 @@ export const MANIFEST_SCHEMA = {
       type: 'string',
       format: 'uri',
       description:
-        'URL of this JSON Schema. Set to https://registry.construct.computer/schemas/manifest.json to enable editor autocomplete.',
+        'URL of this JSON Schema. Set to https://raw.githubusercontent.com/construct-computer/app-sdk/main/schemas/manifest.schema.json to enable editor autocomplete.',
     },
     name: {
       type: 'string',

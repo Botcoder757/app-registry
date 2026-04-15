@@ -145,13 +145,13 @@ my-app/
 
 ## manifest.json Reference
 
-The manifest declares your app's metadata. The shape is described by the JSON Schema at [`https://registry.construct.computer/schemas/manifest.json`](https://registry.construct.computer/schemas/manifest.json) — add it as `$schema` for autocomplete + inline validation in VS Code and other editors. The registry's CI re-checks required fields at PR time.
+The manifest declares your app's metadata. The shape is described by the JSON Schema at [`https://raw.githubusercontent.com/construct-computer/app-sdk/main/schemas/manifest.schema.json`](https://github.com/construct-computer/app-sdk/blob/main/schemas/manifest.schema.json) — add it as `$schema` for autocomplete + inline validation in VS Code and other editors. The registry's CI re-checks required fields at PR time.
 
 ### Minimal Example
 
 ```json
 {
-  "$schema": "https://registry.construct.computer/schemas/manifest.json",
+  "$schema": "https://raw.githubusercontent.com/construct-computer/app-sdk/main/schemas/manifest.schema.json",
   "name": "My App",
   "description": "A short one-line description of what your app does."
 }
@@ -161,7 +161,7 @@ The manifest declares your app's metadata. The shape is described by the JSON Sc
 
 ```json
 {
-  "$schema": "https://registry.construct.computer/schemas/manifest.json",
+  "$schema": "https://raw.githubusercontent.com/construct-computer/app-sdk/main/schemas/manifest.schema.json",
   "name": "My App",
   "description": "A short one-line description of what your app does.",
   "author": { "name": "Your Name", "url": "https://github.com/your-username" },
@@ -207,7 +207,7 @@ The manifest declares your app's metadata. The shape is described by the JSON Sc
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `$schema` | string | No | JSON Schema URL for IDE validation. Always include `https://registry.construct.computer/schemas/manifest.json`. |
+| `$schema` | string | No | JSON Schema URL for IDE validation. Always include `https://raw.githubusercontent.com/construct-computer/app-sdk/main/schemas/manifest.schema.json`. |
 | `name` | string | **Yes** | Display name. Shown in the App Store and Launchpad. |
 | `description` | string | **Yes** | Short description. Shown in search results and app cards. |
 | `author` | object | No | `{ "name": string, "url?": string }` — Author info. |
@@ -1231,4 +1231,4 @@ curl -X POST http://localhost:8787/mcp \
 - [App SDK](https://www.npmjs.com/package/@construct-computer/app-sdk) — Build apps with TypeScript
 - [Create a new app](https://www.npmjs.com/package/@construct-computer/create-construct-app) — Scaffold in seconds
 - [DevTools Reference App](https://github.com/construct-computer/construct-app-hello-world) — Complete example with UI
-- [Manifest Schema](https://registry.construct.computer/schemas/manifest.json) — JSON Schema for IDE validation
+- [Manifest Schema](https://github.com/construct-computer/app-sdk/blob/main/schemas/manifest.schema.json) — JSON Schema for IDE validation

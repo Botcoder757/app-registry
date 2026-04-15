@@ -487,7 +487,7 @@ curl -X POST http://localhost:8787/mcp \\
         <h2>manifest.json</h2>
         <p>Defines your app's metadata. The shape is described by the <a href="/schemas/manifest.json">JSON Schema</a> &mdash; set <code>$schema</code> to get editor autocomplete + validation. CI re-checks required fields at PR time.</p>
         <pre><code>{
-  "$schema": "https://registry.construct.computer/schemas/manifest.json",
+  "$schema": "https://raw.githubusercontent.com/construct-computer/app-sdk/main/schemas/manifest.schema.json",
   "name": "My App",
   "description": "A short one-line description of what your app does.",
   "author": { "name": "Your Name", "url": "https://github.com/you" },

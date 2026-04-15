@@ -44,7 +44,7 @@ Developer repo                  This registry              Cloudflare Worker + D
 - [App SDK](https://www.npmjs.com/package/@construct-computer/app-sdk) — build apps with TypeScript
 - [Create a new app](https://www.npmjs.com/package/@construct-computer/create-construct-app) — scaffold in seconds
 - [DevTools Reference App](https://github.com/construct-computer/construct-app-hello-world) — complete example with UI
-- [Manifest Schema](https://registry.construct.computer/schemas/manifest.json) — JSON Schema for IDE validation
+- [Manifest Schema](https://github.com/construct-computer/app-sdk/blob/main/schemas/manifest.schema.json) — JSON Schema for IDE validation
 
 ## App Repository Structure
 
