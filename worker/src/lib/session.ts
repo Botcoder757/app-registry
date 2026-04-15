@@ -114,7 +114,7 @@ export function buildCookieHeader(name: string, value: string, maxAgeMs: number)
 }
 
 export function buildClearCookieHeader(name: string): string {
-  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 }
 
 export function sessionCookie(cookie: string): string {

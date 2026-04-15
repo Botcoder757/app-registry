@@ -506,8 +506,14 @@ async function syncApps(request: Request, env: Env): Promise<Response> {
     // and remain usable by the app runtime until manually deleted).
     if (Array.isArray(app.owners)) {
       const cleaned = app.owners
-        .map((o) => String(o).trim().toLowerCase())
-        .filter((o) => /^[a-z0-9][a-z0-9-]{0,38}$/.test(o))
+        .map((o) => String(o).trim().replace(/^@/, '').toLowerCase())
+        .filter((o) => {
+          if (!/^[a-z0-9][a-z0-9-]{0,38}$/.test(o)) {
+            console.warn(`Sync: owner "${o}" for app ${app.id} does not match login pattern — skipping`)
+            return false
+          }
+          return true
+        })
       try {
         await env.DB.prepare('DELETE FROM app_owners WHERE app_id = ?').bind(app.id).run()
         for (const login of cleaned) {

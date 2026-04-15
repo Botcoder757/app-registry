@@ -181,8 +181,14 @@ for await (const entry of Deno.readDir("apps")) {
     auth: manifest.auth ?? null,
     owners: Array.isArray(manifest.owners)
       ? manifest.owners
-          .map((o) => String(o).trim().toLowerCase())
-          .filter((o) => /^[a-z0-9][a-z0-9-]{0,38}$/.test(o))
+          .map((o) => String(o).trim().replace(/^@/, '').toLowerCase())
+          .filter((o) => {
+            if (!/^[a-z0-9][a-z0-9-]{0,38}$/.test(o)) {
+              console.warn(`  ⚠ Owner "${o}" from manifest.owners does not match /^[a-z0-9][a-z0-9-]{0,38}$/ — skipping`);
+              return false;
+            }
+            return true;
+          })
       : [],
     versions: versionArray,
   });
