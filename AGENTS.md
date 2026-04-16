@@ -19,6 +19,11 @@ This directory manages the application registry, including app manifests, collec
 - Use `pnpm` for all operations.
 - See `worker/package.json` for specific worker commands.
 
+## App Development
+- New apps should be created from the [template repo](https://github.com/construct-computer/construct-app-sample), not from a CLI scaffolder.
+- The `ConstructApp` SDK handles MCP routing, CORS, asset serving, and `/ui/*` rewriting automatically — `export default app` is all that's needed.
+- Developer docs are in `DEVELOPER_DOCS.md` in this directory.
+
 ## Notes
 - This is a submodule of the monorepo.
 - Deploys to `registry.construct.computer` and `apps.construct.computer`.

@@ -27,7 +27,7 @@ Developer repo                  This registry              Cloudflare Worker + D
 
 **[DEVELOPER_DOCS.md](DEVELOPER_DOCS.md)** — Complete guide for building, testing, and publishing Construct apps, including:
 
-- Quick start with `create-construct-app`
+- Quick start from the template repo
 - Project structure and required files
 - manifest.json reference with all fields
 - Building MCP servers with the App SDK
@@ -42,8 +42,7 @@ Developer repo                  This registry              Cloudflare Worker + D
 - [App Store](https://registry.construct.computer) — browse apps
 - [Publishing Guide](https://registry.construct.computer/publish) — step-by-step guide
 - [App SDK](https://www.npmjs.com/package/@construct-computer/app-sdk) — build apps with TypeScript
-- [Create a new app](https://www.npmjs.com/package/@construct-computer/create-construct-app) — scaffold in seconds
-- [DevTools Reference App](https://github.com/construct-computer/construct-app-hello-world) — complete example with UI
+- [Sample App (Text Tools)](https://github.com/construct-computer/construct-app-sample) — template repo with nine example tools and UI
 - [Manifest Schema](https://github.com/construct-computer/app-sdk/blob/main/schemas/manifest.schema.json) — JSON Schema for IDE validation
 
 ## App Repository Structure
@@ -68,7 +67,7 @@ construct-app-{name}/
 
 ## Publishing an App
 
-1. **Create your app** using the [Develop Guide](DEVELOPER_DOCS.md) or `npx @construct-computer/create-construct-app my-app`
+1. **Create your app** using the [template repo](https://github.com/construct-computer/construct-app-sample) or the [Developer Guide](DEVELOPER_DOCS.md)
 2. **Push to a public GitHub repo** (e.g., `construct-app-myapp`)
 3. **Fork this registry** and add `apps/{your-app-id}.json`:
    ```json

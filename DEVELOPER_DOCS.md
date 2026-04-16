@@ -49,18 +49,16 @@ Apps can optionally include a **visual UI** that opens in a sandboxed window on 
 
 ## Quick Start
 
-The fastest way to create a new Construct app:
+The fastest way to create a new Construct app is to use the [template repo](https://github.com/construct-computer/construct-app-sample):
+
+1. Click **"Use this template"** on GitHub (or clone it directly)
+2. Rename and customize for your app
 
 ```bash
-npx @construct-computer/create-construct-app my-app
-```
-
-This interactive CLI will ask for a name and description, then scaffold a complete project:
-
-```bash
+git clone https://github.com/construct-computer/construct-app-sample.git my-app
 cd my-app
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Your app is now running at `http://localhost:8787`. Test it:
@@ -77,15 +75,10 @@ curl -X POST http://localhost:8787/mcp \
 # Call a tool
 curl -X POST http://localhost:8787/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"hello","arguments":{"name":"World"}},"id":2}'
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"uuid","arguments":{"count":3}},"id":2}'
 ```
 
-**CLI flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--with-ui` | Include a visual UI (interactive HTML interface) |
-| `--no-ui` | Tools only, no visual interface |
+The template includes a working MCP server with nine example tools and a visual UI. Strip out what you don't need and add your own tools.
 
 ---
 
@@ -309,7 +302,7 @@ A handler can return:
 
 When your app is bundled into the registry worker, imports like `@construct-computer/app-sdk` won't resolve. You have two options:
 
-1. **Inline the SDK class** in your `server.ts` (what `create-construct-app` does by default). The SDK is ~150 lines and self-contained.
+1. **Inline the SDK class** in your `server.ts`. The SDK is ~150 lines and self-contained — copy the `ConstructApp` class directly into your server file.
 
 2. **Use ES module bundling** — if you prefer imports, add a build step:
    ```json
@@ -329,7 +322,7 @@ When your app is bundled into the registry worker, imports like `@construct-comp
 Install the SDK for local development with types:
 
 ```bash
-npm install @construct-computer/app-sdk
+pnpm add @construct-computer/app-sdk
 ```
 
 ### Core API
@@ -354,9 +347,9 @@ app
   .tool('tool_b', { description: '...', handler: async () => 'OK' });
 ```
 
-#### `app.fetch(request)`
+#### `app.fetch(request, env?)`
 
-Cloudflare Worker entry point. Export as default:
+Cloudflare Worker entry point. Automatically handles MCP routing, CORS, `/ui/*` path rewriting, and static asset serving via the Cloudflare `ASSETS` binding (when present). Export as default:
 
 ```typescript
 export default app;
@@ -389,10 +382,15 @@ Every handler receives a `ctx` (RequestContext) with:
 | Field | Type | Description |
 |-------|------|-------------|
 | `ctx.userId` | `string \| undefined` | User ID from the `x-construct-user` header |
-| `ctx.auth` | `object \| undefined` | OAuth data from the `x-construct-auth` header |
-| `ctx.auth.access_token` | `string` | OAuth access token (when authenticated) |
-| `ctx.isAuthenticated` | `boolean` | Whether valid auth is present |
+| `ctx.auth` | `object \| undefined` | Credentials from the `x-construct-auth` header |
+| `ctx.auth.type` | `string` | Auth scheme: `'oauth2' \| 'api_key' \| 'bearer' \| 'basic'` |
+| `ctx.auth.access_token` | `string \| undefined` | OAuth2 access token |
+| `ctx.auth.refresh_token` | `string \| undefined` | OAuth2 refresh token |
+| `ctx.auth.expires_at` | `number \| undefined` | OAuth2 token expiry (epoch ms) |
+| `ctx.auth[fieldName]` | `unknown` | Dynamic fields from api_key/bearer/basic scheme `fields[]` |
+| `ctx.isAuthenticated` | `boolean` | Whether valid credentials are present |
 | `ctx.request` | `Request` | The raw HTTP request |
+| `ctx.env` | `Record<string, string>` | App environment variables from the developer dashboard |
 
 ---
 
@@ -473,32 +471,14 @@ not_found_handling = "none"
 run_worker_first = ["/*"]
 ```
 
-Then in your `server.ts`, serve static assets through the ASSETS binding:
+The `run_worker_first = ["/*"]` setting ensures all requests hit your server first. The SDK's `fetch()` handler automatically:
 
-```typescript
-const app = new ConstructApp({ name: 'my-app', version: '1.0.0' });
+- Routes `/mcp` and `/health` to the MCP server
+- Rewrites `/ui/*` requests to `/*` (so dev matches the published URL structure)
+- Serves static files from `ui/` via the `ASSETS` binding
+- Adds CORS headers to every response
 
-// Override fetch to handle static assets
-export default {
-  async fetch(request: Request, env: Record<string, unknown>): Promise<Response> {
-    const url = new URL(request.url);
-
-    // Serve MCP and health from the app
-    if (url.pathname === '/mcp' || url.pathname === '/health') {
-      return app.fetch(request);
-    }
-    if (request.method === 'OPTIONS') {
-      return app.fetch(request);
-    }
-
-    // Serve UI files from the ASSETS binding
-    if (env.ASSETS) {
-      return (env.ASSETS as { fetch: typeof fetch }).fetch(request);
-    }
-    return new Response('Not found', { status: 404 });
-  }
-};
-```
+No manual asset-serving code needed — just `export default app`.
 
 > **Note:** In production the registry proxies UI files from your GitHub repo at the pinned commit. The `ASSETS` binding above is only for local `wrangler dev`. You do **not** need to serve `/sdk/*` from your own worker — load the SDK from `https://registry.construct.computer/sdk/construct.{js,css}` in both dev and prod.
 
@@ -643,7 +623,7 @@ Utility classes: `.btn`, `.btn-secondary`, `.btn-sm`, `.badge`, `.badge-accent`,
 
 ### TypeScript Declarations
 
-Type definitions for the full SDK (including `state` and `agent` namespaces) are available at `ui/construct.d.ts`. The scaffolder generates this file automatically. Add it to your project for autocomplete:
+Type definitions for the full SDK (including `state` and `agent` namespaces) are available at `ui/construct.d.ts`. Copy `src/construct-global.d.ts` from the [app-sdk](https://github.com/construct-computer/app-sdk) into your `ui/` directory (the template repo includes it already). Add it to your project for autocomplete:
 
 ```typescript
 /// <reference path="./construct.d.ts" />
@@ -809,7 +789,7 @@ app.tool('manage_listing', {
 ### Start the dev server
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 This runs `wrangler dev` and starts your app at `http://localhost:8787`.
@@ -842,7 +822,7 @@ curl -X POST http://localhost:8787/mcp \
 
 ### Test in Construct
 
-1. Start your dev server: `npm run dev`
+1. Start your dev server: `pnpm dev`
 2. Open Construct → **Settings** → **Developer**
 3. Toggle **Developer Mode** on
 4. Under **Connect Dev Server**, paste `http://localhost:8787` and click **Connect**
@@ -1035,7 +1015,7 @@ CI (`.github/workflows/validate-pr.yml`) will automatically validate your app:
 - Checks that an entry point exists (`server.ts`, `src/index.ts`, or `index.ts`)
 - Verifies `icon.png` (or `.svg`/`.jpg`) exists
 - Verifies `README.md` exists
-- Type-checks your server (via `npm run build` if `package.json` exists, otherwise `deno check`)
+- Type-checks your server (via `pnpm build` if `package.json` exists, otherwise `deno check`)
 
 Once a maintainer reviews and merges your PR:
 
@@ -1189,7 +1169,7 @@ Common validation errors:
 | No entry point found | Create `server.ts`, `src/index.ts`, or `index.ts` |
 | No icon file found | Add `icon.png` (256×256), `icon.svg`, or `icon.jpg` |
 | Missing `README.md` | Add a `README.md` to your repo root |
-| `npm run build` failed | Check that your `server.ts` compiles without errors |
+| `pnpm build` failed | Check that your `server.ts` compiles without errors |
 | PR author not in `owners[]` | The registry PR author's GitHub login must be listed in `manifest.owners[]` once the array is non-empty. Add them in a PR to the app repo, bump the pinned commit, then re-open the registry PR. |
 
 ### My app doesn't appear in the store
@@ -1229,6 +1209,5 @@ curl -X POST http://localhost:8787/mcp \
 - [App Store](https://registry.construct.computer) — Browse apps
 - [Publishing Guide](https://registry.construct.computer/publish) — Step-by-step guide
 - [App SDK](https://www.npmjs.com/package/@construct-computer/app-sdk) — Build apps with TypeScript
-- [Create a new app](https://www.npmjs.com/package/@construct-computer/create-construct-app) — Scaffold in seconds
-- [DevTools Reference App](https://github.com/construct-computer/construct-app-hello-world) — Complete example with UI
+- [Sample App (Text Tools)](https://github.com/construct-computer/construct-app-sample) — Template repo with nine example tools and UI
 - [Manifest Schema](https://github.com/construct-computer/app-sdk/blob/main/schemas/manifest.schema.json) — JSON Schema for IDE validation
