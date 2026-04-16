@@ -15,6 +15,10 @@ jobs:
         with:
           deno-version: v2.x
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -115,11 +119,11 @@ jobs:
               cd -; continue
             fi
 
-            # Type check — try npm build first (Worker apps), fall back to deno check
+            # Type check — try pnpm build first (Worker apps), fall back to deno check
             if [ -f package.json ]; then
-              echo "  Building with npm..."
-              npm install --silent 2>/dev/null && npm run build --silent 2>/dev/null || {
-                ERRORS="$ERRORS\n- $app_id: npm build failed"
+              echo "  Building with pnpm..."
+              pnpm install --silent 2>/dev/null && pnpm run build --silent 2>/dev/null || {
+                ERRORS="$ERRORS\n- $app_id: pnpm build failed"
                 cd -; continue
               }
             else
