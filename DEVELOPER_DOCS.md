@@ -12,7 +12,8 @@ Everything you need to build, test, and publish apps for [Construct](https://con
 4. [manifest.json Reference](#manifestjson-reference)
 5. [Building Your MCP Server](#building-your-mcp-server)
 6. [Using the App SDK](#using-the-app-sdk)
-7. [Adding a Visual UI](#adding-a-visual-ui)
+7. [Calling Platform Tools](#calling-platform-tools)
+8. [Adding a Visual UI](#adding-a-visual-ui)
 8. [Construct Browser SDK](#construct-browser-sdk)
 9. [Authentication (OAuth2, API Key, Bearer, Basic)](#authentication)
 10. [Testing Locally](#testing-locally)
@@ -188,7 +189,13 @@ The manifest declares your app's metadata. The shape is described by the JSON Sc
   },
   "permissions": {
     "network": ["api.example.com"],
-    "storage": "1MB"
+    "storage": "1MB",
+    "uses": {
+      "tools": ["drive.list_files", "calendar.list_events"],
+      "apps": [
+        { "app_id": "sample-summarizer", "tools": ["summarize"] }
+      ]
+    }
   },
   "tools": [
     { "name": "search", "description": "Search for items" }
@@ -217,6 +224,8 @@ The manifest declares your app's metadata. The shape is described by the JSON Sc
 | `permissions` | object | No | Declared permissions shown to users during install. |
 | `permissions.network` | string[] | No | External domains this app connects to. |
 | `permissions.storage` | string | No | Maximum storage needed (e.g., `"1MB"`). |
+| `permissions.uses.tools` | string[] | No | Managed platform tools this app may call through `ctx.construct.tools.call()`. See [Calling Platform Tools](#calling-platform-tools). |
+| `permissions.uses.apps` | array | No | Other Construct apps this app may call through `ctx.construct.apps.call()`. Each item is `{ app_id, tools: [...] }`. |
 | `tools` | array | No | Pre-declared tool list. Auto-discovered on deploy if omitted. |
 
 ---
@@ -391,6 +400,133 @@ Every handler receives a `ctx` (RequestContext) with:
 | `ctx.isAuthenticated` | `boolean` | Whether valid credentials are present |
 | `ctx.request` | `Request` | The raw HTTP request |
 | `ctx.env` | `Record<string, string>` | App environment variables from the developer dashboard |
+| `ctx.construct` | `ConstructBridge` | Bridge into platform capabilities — see [Calling Platform Tools](#calling-platform-tools). |
+
+---
+
+## Calling Platform Tools
+
+Your app can reach into the Construct platform from inside a tool handler using `ctx.construct`:
+
+```ts
+app.tool('list_files', {
+  description: 'List files in the user\'s cloud drive.',
+  parameters: { limit: { type: 'number' } },
+  handler: async (args, ctx) => {
+    const result = await ctx.construct.tools.call('drive.list_files', {
+      limit: args.limit ?? 10,
+    });
+    return result.text;
+  },
+});
+```
+
+Every capability your app uses must be declared in `manifest.json` under `permissions.uses`:
+
+```json
+"permissions": {
+  "uses": {
+    "tools": ["drive.list_files", "calendar.list_events"],
+    "apps": [
+      { "app_id": "sample-summarizer", "tools": ["summarize"] }
+    ]
+  }
+}
+```
+
+Undeclared calls are rejected by the gateway with `403 forbidden`.
+
+### Two methods on `ctx.construct`
+
+| Method | Purpose |
+|--------|---------|
+| `ctx.construct.tools.call(name, args?)` | Invoke a managed platform tool. `name` must be an exact entry from the public catalog (see [Discovering Available Platform Tools](#discovering-available-platform-tools)) and must be listed in `permissions.uses.tools`. |
+| `ctx.construct.apps.call(appId, toolName, args?)` | Invoke a tool on another Construct app. The `(appId, toolName)` pair must be whitelisted in `permissions.uses.apps`. |
+
+Both methods return `{ data: unknown, text: string }`. On failure, they throw a `ConstructCallError` with a stable `code` you can branch on:
+
+```ts
+import { ConstructCallError } from '@construct-computer/app-sdk';
+
+try {
+  const r = await ctx.construct.tools.call('drive.list_files', { limit: 5 });
+  return r.text;
+} catch (err) {
+  if (err instanceof ConstructCallError && err.code === 'not_connected') {
+    return 'Please connect your drive in Settings first.';
+  }
+  throw err;
+}
+```
+
+### Discovering Available Platform Tools
+
+The full list of managed platform tools — the only names you may put in `permissions.uses.tools` — is served live from the Construct worker:
+
+```bash
+curl https://beta.construct.computer/v1/tools
+```
+
+The response is:
+
+```json
+{
+  "count": 33,
+  "tools": [
+    {
+      "name": "drive.list_files",
+      "description": "List files in the user's cloud drive. Returns name, id, mime type, and modified time.",
+      "inputSchema": { "type": "object", "properties": { "limit": { "type": "number" } } }
+    },
+    { "name": "drive.get_file", "description": "…", "inputSchema": { "…": "…" } }
+  ]
+}
+```
+
+Use it to:
+
+- Browse namespaces before deciding what your app needs (`drive.*`, `calendar.*`, `mail.*`, `notes.*`, `sheets.*`, `docs.*`, `code.*`, `chat.*`, `payments.*`, `notify.*`).
+- Copy the exact `name` strings into `manifest.permissions.uses.tools`.
+- Inspect each tool's `inputSchema` so you know what arguments `ctx.construct.tools.call()` expects.
+
+**Rules:**
+
+- **Exact names only.** Wildcards like `drive.*` are **not** supported — `permissions.uses.tools` must list each tool name verbatim, and the runtime check is a literal string match. Any name missing from `/v1/tools` is rejected at dispatch time with `unknown_tool`.
+- The catalog is versioned as a stable public contract. Backing providers may change, but the public `<namespace>.<verb>` names do not.
+- During staging you can hit `https://staging.construct.computer/v1/tools` instead.
+
+### Error codes
+
+`ConstructCallError.code` is one of:
+
+| Code | Source | Meaning |
+|------|--------|---------|
+| `no_bridge` | SDK | Request did not come through the Construct platform — no `x-construct-call-token` header was present. Always thrown by the local stub (e.g. direct `curl`, `wrangler dev`). Never returned by the gateway. |
+| `bad_request` | SDK | You passed a non-string `name`/`appId`/`toolName` to `tools.call` / `apps.call`. |
+| `network_error` | SDK | `fetch()` to the gateway threw (transient connectivity). |
+| `bad_response` | SDK | Gateway returned a non-JSON response. |
+| `missing_token` / `invalid_token` | Gateway (401) | Token was missing or failed verification. Contact platform support if you see this from a deployed app. |
+| `gateway_disabled` | Gateway (503) | The platform gateway is intentionally off (dev or incident). |
+| `forbidden` | Gateway (403) | The call wasn't declared in `manifest.permissions.uses`. Add the tool or `(app_id, tool)` pair to your manifest and bump the pinned commit. |
+| `unknown_tool` | Gateway (404) | No such tool in the public catalog. Check `/v1/tools` for the current list. |
+| `permissions_unavailable` | Gateway (503) | Registry lookup for your app's declared permissions failed transiently — safe to retry. |
+| `not_connected` | Gateway (424) | The user hasn't linked the backing service (e.g. hasn't signed into Drive). Prompt them to connect in Construct Settings. |
+| `missing_link` | Gateway (424) | Similar to `not_connected` — the required external account link is absent. |
+| `rate_limited` | Gateway (429) | Exceeded ~30 combined gateway calls / 60s for this `(user, app)`. Soft per-isolate sliding window; response includes `retry_after_sec`. |
+| `depth_limit` | Gateway (400) | Cross-app chain too deep. `MAX_CALL_DEPTH = 3`, which means a token with `depth ≥ 2` cannot make further `apps.call` invocations (so the deepest valid chain is Agent → App A → App B → App C; C cannot call D). |
+| `self_call` | Gateway (400) | An app tried to `apps.call` itself. |
+| `target_unknown` | Gateway (404) | Target `app_id` isn't registered. |
+| `target_unavailable` | Gateway (424) | Target app is registered but hasn't been deployed yet (`base_url` missing). |
+| `target_unreachable` | Gateway (502) | Network error reaching the target app's worker. |
+| `target_error` / `bad_target_response` | Gateway (502) | Target app returned a non-2xx, non-JSON, or invalid JSON-RPC reply. |
+| `tool_error` | Gateway (502) | A target tool returned `isError: true`. |
+| `backend_error` / `backend_unavailable` / `unknown_backend` | Gateway (502/503) | The managed-tool backend (Composio etc.) failed or is offline. |
+
+### Local dev
+
+In local dev (no `x-construct-call-token` header on the request) `ctx.construct` is a stub that throws `ConstructCallError('no_bridge', ...)` for every method. Deploy the app and reach it via the platform to get real dispatch. You can still browse the tool catalog locally — `curl https://beta.construct.computer/v1/tools` works from anywhere.
+
+See the [`apps/sample-app`](https://github.com/construct-computer/construct-app-sample) for a working end-to-end example — look for the `send_notification` and `list_upcoming_events` tools in `server.ts`.
 
 ---
 

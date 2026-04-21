@@ -25,6 +25,7 @@ import { handleDevRequest } from './dev'
 import { decryptValue } from './lib/crypto'
 import { MANIFEST_SCHEMA } from './lib/manifest-schema'
 import { CONSTRUCT_SDK_JS, CONSTRUCT_SDK_CSS, SDK_RESPONSE_HEADERS_JS, SDK_RESPONSE_HEADERS_CSS } from './lib/construct-sdk'
+import { mintCallToken } from './lib/call-token'
 
 interface Env {
   DB: D1Database
@@ -35,14 +36,26 @@ interface Env {
   GITHUB_CLIENT_SECRET?: string
   SESSION_SECRET?: string
   ENV_ENCRYPTION_KEY?: string
+  // App gateway wiring (shared with construct worker). Both vars are
+  // optional — when either is missing the gateway bridge is simply not
+  // exposed to apps on that request, keeping old behavior.
+  CALL_TOKEN_SECRET?: string
+  GATEWAY_URL?: string
+  // Shared secret for worker-to-worker reads (e.g. construct worker
+  // fetching permissions.uses for a given app from the registry DB).
+  INTERNAL_API_SECRET?: string
 }
 
 // Headers that must NEVER arrive at a bundled app handler from the outside.
-// We strip them on every dispatch so the only place x-construct-env can be
-// set is inside handleAppProxy after we've looked up the caller's real appId.
+// We strip them on every dispatch so the only place these can be set is
+// inside handleAppProxy after we've looked up the caller's real appId.
 const INTERNAL_HEADERS_TO_STRIP = [
   'x-construct-env',
   'x-construct-env-sig',
+  // Gateway bridge: apps must not be able to forge a call token or
+  // redirect the SDK bridge to a different gateway URL.
+  'x-construct-call-token',
+  'x-construct-gateway',
 ]
 
 // ── Helpers ──
@@ -642,6 +655,28 @@ async function buildScopedRequest(appId: string, request: Request, env: Env): Pr
     headers.set('x-construct-env', b64)
   }
 
+  // App-gateway bridge: mint a short-lived call token so `ctx.construct.*`
+  // works inside the app handler. We only mint when:
+  //   - both the secret and gateway URL are configured, AND
+  //   - the caller supplied x-construct-user (no user = no bridge).
+  // App→app dispatches already carry a token with depth>0; the gateway
+  // re-mints for the inner call with its own depth, so we do not need to
+  // preserve inbound tokens here.
+  const userId = request.headers.get('x-construct-user')
+  if (userId && env.CALL_TOKEN_SECRET && env.GATEWAY_URL) {
+    try {
+      const token = await mintCallToken(env.CALL_TOKEN_SECRET, {
+        userId,
+        appId,
+        depth: 0,
+      })
+      headers.set('x-construct-call-token', token)
+      headers.set('x-construct-gateway', env.GATEWAY_URL)
+    } catch (err) {
+      console.error(`Failed to mint call token for ${appId}:`, err)
+    }
+  }
+
   // Preserve method/body; we only rewrote headers.
   return new Request(request.url, {
     method: request.method,
@@ -946,6 +981,36 @@ export default {
       // Authenticated sync endpoint
       if (request.method === 'POST' && path === '/v1/sync') {
         return await syncApps(request, env)
+      }
+
+      // Internal: permissions.uses for a given app. Called by the
+      // construct worker's gateway before dispatching tool/app calls.
+      // Authenticated with the shared INTERNAL_API_SECRET. Not cached
+      // at the edge — the construct worker holds its own short-lived
+      // in-memory cache.
+      if (request.method === 'GET') {
+        const permsMatch = path.match(/^\/internal\/permissions\/([a-z0-9-]+)$/)
+        if (permsMatch) {
+          if (!env.INTERNAL_API_SECRET) {
+            return error('Internal API not configured', 503)
+          }
+          const auth = request.headers.get('Authorization')
+          if (auth !== `Bearer ${env.INTERNAL_API_SECRET}`) return error('Unauthorized', 401)
+
+          const appId = permsMatch[1]
+          const row = await env.DB.prepare(
+            'SELECT permissions_json, subdomain_label FROM apps WHERE id = ? AND status = ?'
+          ).bind(appId, 'active').first<{ permissions_json: string | null; subdomain_label: string | null }>()
+
+          if (!row) return error('App not found', 404)
+
+          const permissions = row.permissions_json ? JSON.parse(row.permissions_json) as Record<string, unknown> : {}
+          const uses = (permissions.uses ?? {}) as Record<string, unknown>
+          const base_url = row.subdomain_label
+            ? `https://${row.subdomain_label}.apps.construct.computer`
+            : null
+          return json({ app_id: appId, uses, base_url }, 200, 0)
+        }
       }
 
       // Install count bump (fire-and-forget from backend)

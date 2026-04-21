@@ -157,6 +157,52 @@ export const MANIFEST_SCHEMA = {
           type: 'string',
           description: 'Maximum storage (e.g. "1MB", "10MB").',
         },
+        uses: {
+          type: 'object',
+          additionalProperties: false,
+          description:
+            'Platform capabilities this app uses at runtime. Each must be declared to be callable via ctx.construct.',
+          properties: {
+            tools: {
+              type: 'array',
+              description:
+                'Managed platform tool names (e.g. "drive.list_files") this app may call through ctx.construct.tools.call().',
+              items: {
+                type: 'string',
+                pattern: '^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$',
+              },
+              uniqueItems: true,
+            },
+            apps: {
+              type: 'array',
+              description: 'Other Construct apps this app may call through ctx.construct.apps.call().',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['app_id', 'tools'],
+                properties: {
+                  app_id: {
+                    type: 'string',
+                    description: 'Target app id as registered in the app registry.',
+                  },
+                  tools: {
+                    type: 'array',
+                    minItems: 1,
+                    items: {
+                      type: 'string',
+                      pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$',
+                    },
+                    description: 'Whitelisted tool names on the target app.',
+                  },
+                },
+              },
+            },
+            inference: {
+              type: 'boolean',
+              description: 'Whether this app may use platform inference via ctx.construct.infer().',
+            },
+          },
+        },
       },
     },
     tools: {
