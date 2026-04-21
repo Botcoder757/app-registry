@@ -27,11 +27,40 @@ export const CONSTRUCT_SDK_CSS = `/* Construct SDK — Design System */
 .fade-in{animation:fadeIn 200ms ease-out}@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 `;
 
+// Standalone mode: when the UI is opened directly (e.g. http://localhost:8787
+// in a browser tab) instead of inside the Construct desktop iframe, there's
+// no parent window listening for `construct:request` messages — postMessage
+// calls would hang forever ("Running…" stuck). Detect top-level-window case
+// and fall back to calling the worker's /mcp endpoint directly via fetch.
+// Same-origin, so no CORS concerns; the SDK already makes the /mcp endpoint
+// PNA-permissive for cross-network cases.
 export const CONSTRUCT_SDK_JS = [
   '/* Construct SDK — Bridge */',
   '(function(){',
-  'var pending={};var idCounter=0;',
+  'var pending={};var idCounter=0;var rpcId=0;',
+  'var standalone=(function(){try{return window===window.top}catch(e){return true}})();',
+  'function mcpFetch(tool,args){',
+  'return fetch("/mcp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:++rpcId,method:"tools/call",params:{name:tool,arguments:args||{}}})}).then(function(r){',
+  'if(!r.ok)throw new Error("MCP request failed: HTTP "+r.status);',
+  'return r.json();',
+  '}).then(function(d){',
+  'if(d.error)throw new Error(d.error.message||"MCP error");',
+  'return d.result;',
+  '});',
+  '}',
+  'function standaloneRequest(method,params){',
+  'params=params||{};',
+  'if(method==="tools.call")return mcpFetch(params.tool,params.arguments);',
+  'if(method==="ui.setTitle"){if(params.title)document.title=params.title;return Promise.resolve();}',
+  'if(method==="ui.getTheme")return Promise.resolve({mode:(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light",accent:"#6366f1"});',
+  'if(method==="ui.close"){try{window.close()}catch(e){}return Promise.resolve();}',
+  'if(method==="state.get")return Promise.resolve({});',
+  'if(method==="state.set")return Promise.resolve({ok:true});',
+  'if(method==="agent.notify"){console.info("[construct] agent.notify (standalone, ignored):",params.message);return Promise.resolve();}',
+  'return Promise.reject(new Error("Method not supported in standalone mode: "+method));',
+  '}',
   'function sendRequest(method,params){',
+  'if(standalone)return standaloneRequest(method,params);',
   'return new Promise(function(resolve,reject){',
   'var id=String(++idCounter);',
   'pending[id]={resolve:resolve,reject:reject};',
@@ -57,7 +86,14 @@ export const CONSTRUCT_SDK_JS = [
   'getTheme:function(){return sendRequest("ui.getTheme");},',
   'close:function(){return sendRequest("ui.close");}',
   '},',
-  'ready:function(fn){if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",fn);else fn();}',
+  'state:{',
+  'get:function(){return sendRequest("state.get");},',
+  'set:function(s){return sendRequest("state.set",{state:s});},',
+  'onUpdate:function(cb){window.addEventListener("message",function(e){if(e.data&&e.data.type==="construct:state_updated")try{cb(e.data.state)}catch(err){console.error("[construct] state listener error:",err)}});}',
+  '},',
+  'agent:{notify:function(m){return sendRequest("agent.notify",{message:m});}},',
+  'ready:function(fn){if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",fn);else fn();},',
+  'isStandalone:standalone',
   '};',
   '})();',
 ].join('\n');
